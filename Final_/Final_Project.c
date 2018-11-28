@@ -1,63 +1,227 @@
 #include "msp.h"
+#include "stdio.h"
+
+enum states{
+    CLOCK,
+    ALARM,
+    SETTIME,
+    SETALARM,
+    SNOOZE,
+    TURN,
+};
 
 
-/**
- * main.c
- */
 
+
+void RTC_Init();
+void LCD_pin_init(void);
+void write_command(uint8_t command);
+void dataWrite(uint8_t data);
+void LCD_init(void);
+void Systick_ms_delay(uint16_t delay);
+void Systick_us_delay(uint32_t microsecond);
+void SysTick_Init(void);
+void Byte(uint8_t byte);
+void Nibble(uint8_t nibble);
+
+
+void setupSerial(); // Sets up serial for use and enables interrupts
+void writeOutput(char *string); // write output charactrs to the serial port
+void readInput(char* string); // read input characters from INPUT_BUFFER that are valid
 // Making a buffer of 100 characters for serial to store to incoming serial data
 #define BUFFER_SIZE 100
 char INPUT_BUFFER[BUFFER_SIZE];
 // initializing the starting position of used buffer and read buffer
 uint8_t storage_location = 0; // used in the interrupt to store new data
 uint8_t read_location = 0; // used in the main application to read valid data that hasn't been read yet
-void setupSerial(); // Sets up serial for use and enables interrupts
-void writeOutput(char *string); // write output charactrs to the serial port
-void readInput(char* string); // read input characters from INPUT_BUFFER that are valid
+int newcom = 0;
 
-void LCD_pin_init(void);
-void butt_init(void);
-int button_pressed(void);
-int button_pressed2(void);
-void Systick_us_delay(uint32_t microsecond);
-void PortADC_init(void);
-void ADC14_init(void);
-void LCD_pin_init(void);
-void write_command(uint8_t command);
-void dataWrite(uint8_t data);
-void LCD_init(void);
-void Systick_ms_delay(uint16_t delay);
-void SysTick_Init(void);
-void Byte(uint8_t byte);
-void Nibble(uint8_t nibble);
+int time_update = 1, alarm_update = 1;
+uint8_t hours, mins, secs, Ahours=12, Amins=00, Shours=12, Smins=00, Ssecs=00;
+
 void main(void)
 {
-
-    WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;		// stop watchdog timer
+    WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     char string[BUFFER_SIZE]; // Creates local char array to store incoming serial commands
-    setupSerial();
-    INPUT_BUFFER[0]= '\0';  // Sets the global buffer to initial condition of empty
+        setupSerial();
+        INPUT_BUFFER[0]= '\0';  // Sets the global buffer to initial condition of empty
 
-    void LCD_pin_init();
-    butt_init();
+
+    int i;
+    int validh = 0;
+    int validm = 0;
+    int valids =0;
+    char time[10];
+    char Atime[0];
     SysTick_Init();
-    PortADC_init();
-    ADC14_init();
-    void LCD_init();
-    float volt =0;
-    float cel = 0;
-    float fare = 0;
-    static volatile uint16_t result;
+    LCD_pin_init();
+    LCD_init();
+    RTC_Init();
+    __enable_interrupt();
 
-    NVIC->ISER[0] = 1 << ((ADC14_IRQn) & 31);   //enables ADC interrupt in  NVIC
-while (1){
-    ADC14->CTL0 |= ADC14_CTL0_SC;    //starts conversion
-    while(!(ADC14->IFGR0));         //waits for it to complete
-    result = ADC14->MEM[0];         //get value from the ADC
-    volt = (result*3.3)/16384;      //calculate volts
-    cel =  ((volt * 1000.0) - 500) / 10;
-    fare = (cel * 9/5) + 32;
+
+    enum states state = CLOCK;       //sets the state immediately to MENU
+    while(1){
+
+        if (newcom){
+            readInput(string); // Read the input up to \n, store in string.  This function doesn't return until \n is received
+            if(string[0] != '\0'){ // if string is not empty, check the inputted data.
+                if (string[0] == 'S' && string[1] == 'E' && string[2] == 'T' && string[3] == 'T' && string[4] == 'I' && string[5] == 'M' && string[6] == 'E')
+                {
+                if      ((string[8] == '2' && string[9] <'4' && string[9] >= '0'))  validh = 1; //20-24
+                else if (string[8] == '1' && string[9] <='9' && string[9] >= '0')  validh = 1; //10-19
+                else if (string[8] == '0' && string[9] <='9' && string[9] >= '0')  validh = 1; //0-9
+                if (string[11] >= '0' && string[11] <'6' && string[12] >= '0' && string[12] <='9')  validm = 1;  //valid minute
+                if (string[14] >= '0' && string[14] <'6' && string[15] >= '0' && string[15] <='9')  valids = 1;  //valid minute
+                if ((validh + validm + valids) == 3){
+                    writeOutput("Time Set");
+                    Shours = (string[8]-48)*10 + (string[9]-48);
+                    Smins = (string[11]-48)*10 + (string[12]-48);
+                    Ssecs  = (string[14]-48)*10 + (string[15]-48);
+                    writeOutput(string);    //prints valid to serial
+                    writeOutput("\n");
+                    validh = 0;
+                    validm = 0;
+                    valids =0;
+                    RTC_Init();
+                    newcom = 0;
+                }
+                else{
+                    validh = 0;
+                    validm = 0;
+                    valids =0;
+                    writeOutput("Invalid time");
+                    writeOutput(string);    //prints valid to serial
+                    writeOutput("\n");
+                    newcom = 0;
+                }
+
+            }
+                else if (string[0] == 'S' && string[1] == 'E' && string[2] == 'T' && string[3] == 'A' && string[4] == 'L' && string[5] == 'A' && string[6] == 'R' && string[7] == 'M')
+                {
+                    if      ((string[9] == '2' && string[10] <'4' && string[10] >= '0'))  validh = 1; //20-24
+                                           else if (string[9] == '1' && string[10] <='9' && string[10] >= '0')  validh = 1; //10-19
+                                           else if (string[9] == '0' && string[10] <='9' && string[10] >= '0')  validh = 1; //0-9
+                                           if (string[12] >= '0' && string[12] <'6' && string[13] >= '0' && string[12] <='9')  validm = 1;  //valid minute
+                                           if ((validh + validm) == 2){
+                                               writeOutput("ALARM Set");
+                                               Ahours = (string[9]-48)*10 + (string[10]-48);
+                                               Amins = (string[12]-48)*10 + (string[13]-48);
+                                               writeOutput(string);    //prints valid to serial
+                                               writeOutput("\n");
+                                                validh = 0;
+                                                validm = 0;
+                                                RTC_Init();
+                                                alarm_update = 1;
+                                           }
+                                           else{
+                                                validh = 0;
+                                                validm = 0;
+                                               writeOutput("Invalid time, please renter.");
+                                               writeOutput(string);    //prints valid to serial
+                                               writeOutput("\n");
+                                               newcom = 0;
+                                           }
+                                       }
+                }
+            newcom = 0;
+        }
+
+        switch (state){
+        case CLOCK:
+        if(time_update){
+            time_update = 0;
+            printf("%02d:%02d:%02d\n",hours,mins,secs);
+            if (hours == 0)                         sprintf(time, "%02d:%02d:%02d AM", hours+12,mins,secs);
+            else if (hours>12 && hours<22)          sprintf(time, " %01d:%02d:%02d PM", hours-12,mins,secs);
+            else if (hours==12)                     sprintf(time, "%02d:%02d:%02d PM", hours,mins,secs);
+            else if(hours>=22)                      sprintf(time, "%02d:%02d:%02d PM", hours-12,mins,secs);
+            else if (hours < 10)                    sprintf(time, " %01d:%02d:%02d AM", hours,mins,secs);
+            else                                    sprintf(time, "%02d:%02d:%02d AM", hours,mins,secs);
+            write_command(0x82);
+            for (i=0; i<11; i++)
+            {
+                dataWrite(time[i]);    //prints time to LCD
+                Systick_us_delay(10);
+            }
+        }
+
+        if(alarm_update){
+            printf("ALARM\n");
+            if (Ahours == 0)                        sprintf(Atime, "%02d:%02d AM", Ahours+12,Amins);
+            else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d PM", Ahours-12,Amins);
+            else if (Ahours==12)                    sprintf(Atime, "%02d:%02d PM", Ahours,Amins);
+            else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d PM", Ahours-12,Amins);
+            else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d AM", Ahours,Amins);
+            else                                    sprintf(Atime, "%02d:%02d AM", Ahours,Amins);
+            write_command(0x93);
+            for (i=0; i<8; i++)
+            {
+                dataWrite(Atime[i]);    //prints time to LCD
+                Systick_us_delay(10);
+            }
+
+        alarm_update = 0;
+        }
+
+        break;
+
+        case SETTIME:
+
+           state = SETALARM;
+
+           break;
+
+        case SETALARM:
+
+                   break;
+
 }
+    }
+}
+
+void RTC_Init(){
+    //Initialize time to 2:45:55 pm
+    //    RTC_C->TIM0 = 0x2D00;  //45 min, 0 secs
+    RTC_C->CTL0 = (0xA500);
+    RTC_C->CTL13 = 0;
+
+    RTC_C->TIM0 = Smins<<8 | Ssecs;//45 min, 55 secs
+    RTC_C->TIM1 = 1<<8 | Shours;  //Monday, 2 pm
+    RTC_C->YEAR = 2018;
+    //Alarm at 2:46 pm
+    RTC_C->AMINHR = Ahours<<8 | Amins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
+    RTC_C->ADOWDAY = 0;
+    RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
+
+    RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
+    RTC_C->CTL13 = 0;
+    //TODO
+    NVIC_EnableIRQ(RTC_C_IRQn);
+}
+
+void RTC_C_IRQHandler()
+{
+    if(RTC_C->PS1CTL & BIT0){
+        hours = RTC_C->TIM1 & 0x00FF;
+        mins = (RTC_C->TIM0 & 0xFF00) >> 8;
+        secs = RTC_C->TIM0 & 0x00FF;
+        //        if(secs != 59){
+        //            RTC_C->TIM0 = RTC_C->TIM0 + 1;
+        //        }
+        //        else {
+        //            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;
+        //            time_update = 1;
+        //        }
+        time_update = 1;
+        RTC_C->PS1CTL &= ~BIT0;
+    }
+    if(RTC_C->CTL0 & BIT1)
+    {
+        alarm_update = 1;
+        RTC_C->CTL0 = (0xA500) | BIT5;
+    }
+
 }
 /********************************************************
  * Michael James     Bryanna Flowers
@@ -86,7 +250,7 @@ void LCD_init()
     Systick_us_delay(10000);
     write_command(1);   //clear screen
     Systick_us_delay(10000);
-    write_command(6);   //increment cursor
+    write_command(0x0C);   //hide cursor
     Systick_ms_delay(10);
 }
 /********************************************************
@@ -124,11 +288,11 @@ void dataWrite(uint8_t data)
 void PulseEnablePin(void)
 {
     P3->OUT &=~(BIT0);  //turns enable low
-    Systick_us_delay(10000);
+    Systick_us_delay(1000);
     P3->OUT |= (BIT0);  //turns enable high
-    Systick_us_delay(10000);
+    Systick_us_delay(1000);
     P3->OUT &=~(BIT0);  //turns enable low
-    Systick_us_delay(10000);
+    Systick_us_delay(1000);
 }
 /********************************************************
  * Michael James     Bryanna Flowers
@@ -144,7 +308,7 @@ void Byte(uint8_t byte)
     Nibble(nibble);                 //calls nibble
     nibble = byte & 0x0F;           //sets nibble to right most bits
     Nibble(nibble);                 //calls nibble
-    Systick_us_delay(10000);
+    Systick_us_delay(1000);
 }
 /********************************************************
  * Michael James     Bryanna Flowers
@@ -222,87 +386,15 @@ void Systick_ms_delay(uint16_t delay)
     SysTick -> VAL = 0;
     while((SysTick -> CTRL & 0x00010000) == 0);
 }
-
-void PortADC_init(void)
-{
-    P5->SEL0 |= BIT5;   //sets pin 5.5 as A0 input
-    P5->SEL1 |= BIT5;
-}
-void ADC14_init(void)
-{
-    ADC14->CTL0 &= ~ADC14_CTL0_ENC;    //turns off ADC converter while initializing
-    ADC14->CTL0 |= 0x04200210;         //16 sample clocks, SMCLK, S/H pulse
-    ADC14->CTL1 =  0x00000030;         //14 bit resolution
-    ADC14->CTL1 |= 0x00000000;         //convert for mem0 register
-    ADC14->MCTL[0]=0x00000000;         //mem[0] to ADC14INCHx = 0
-    ADC14->CTL0 |= ADC14_CTL0_ENC;     //enables ADC14ENC and starts ADC after configuration
-}
-
-/********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * initializing buttons for interrupts
- * Inputs: buttons for emergency stop and light switch
- * Outputs: N/A
- ***************************************************** */
-void butt_init(void)
-{
-    P6->DIR &= ~(BIT0); //input
-    P6->REN = (BIT0);
-    P6->OUT = (BIT0);
-    P6->IE = (BIT0);    //enable interrupt
-    P6->IES |= (BIT0);
-    P6->IFG = 0;    //clear flag
-
-    P5->DIR &= ~(BIT7); //input
-    P5->REN = (BIT7);
-    P5->OUT = (BIT7);
-    P5->IE = (BIT7);    //enable interrupt
-    P5->IES |= (BIT7);
-    P5->IFG = 0;    //clear flag
-}
-/********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for light switch
- * Inputs: button for lights
- * Outputs: N/A
- ***************************************************** */
-int button_pressed(void)
-{
-    int buttonDebounced = 0;
-    if (!(P5->IN & BIT7))   //if button pressed
-    {
-        __delay_cycles(1500); // waits for 5 milliseconds
-        while (!(P5->IN & BIT7)){}  //waits for button to be released
-        buttonDebounced =1;
-    }
-    return buttonDebounced;
-}
-//
-/********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for emergency stop
- * Inputs: button for emergency stop
- * Outputs: N/A
- ***************************************************** */
-int button_pressed2(void)
-{
-    int buttonDebounced = 0;
-    if (!(P6->IN & BIT0))   //if button pressed
-    {
-        __delay_cycles(1500); // waits for 5 milliseconds
-        while (!(P6->IN & BIT0)){}  //wait for button to be released
-        buttonDebounced =1;
-    }
-    return buttonDebounced;
-}
 void EUSCIA0_IRQHandler(void)
 {
     if (EUSCI_A0->IFG & BIT0)  // Interrupt on the receive line
     {
-        INPUT_BUFFER[storage_location] = EUSCI_A0->RXBUF; // store the new piece of data at the present location in the buffer
+        INPUT_BUFFER[storage_location] = EUSCI_A0->RXBUF;
+        if (EUSCI_A0->RXBUF == 13)// store the new piece of data at the present location in the buffer
+        {
+            newcom = 1;
+        }
         EUSCI_A0->IFG &= ~BIT0; // Clear the interrupt flag right away in case new data is ready
         storage_location++; // update to the next position in the buffer
         if(storage_location == BUFFER_SIZE) // if the end of the buffer was reached, loop back to the start
@@ -357,3 +449,4 @@ void setupSerial()
     EUSCI_A0->IE |= BIT0;      // Enable interrupt
     NVIC_EnableIRQ(EUSCIA0_IRQn);
 }
+
