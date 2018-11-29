@@ -23,7 +23,11 @@ void Systick_us_delay(uint32_t microsecond);
 void SysTick_Init(void);
 void Byte(uint8_t byte);
 void Nibble(uint8_t nibble);
-
+void brighter();
+void initializePWMports();
+//void butt_init(void);
+//int button_pressed();
+//int button_pressed2();
 
 void setupSerial(); // Sets up serial for use and enables interrupts
 void writeOutput(char *string); // write output charactrs to the serial port
@@ -37,10 +41,11 @@ uint8_t read_location = 0; // used in the main application to read valid data th
 int newcom = 0;
 int b = 0;
 int time_update = 1, alarm_update = 1;
-uint8_t hours, mins, secs, Ahours=12, Amins=00, Shours=12, Smins=00, Ssecs=00;
+uint8_t hours = 12, mins = 00, secs = 00, Ahours=12, Amins=6, Shours=12, Smins=00, Ssecs=00;
+float brightness = 0;
 
-void main(void)
-{
+
+void main(void){
     WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     char string[BUFFER_SIZE]; // Creates local char array to store incoming serial commands
         setupSerial();
@@ -48,15 +53,21 @@ void main(void)
 
 
     int i;
+    int car = 0;
     int validh = 0;
     int validm = 0;
     int valids =0;
     char time[10];
     char Atime[0];
+    initializePWMports();
     SysTick_Init();
     LCD_pin_init();
     LCD_init();
     RTC_Init();
+//    butt_init();
+
+//    NVIC_EnableIRQ(PORT6_IRQn);
+//    NVIC_EnableIRQ(PORT5_IRQn); //allowing interrupts
     __enable_interrupt();
 
 
@@ -168,6 +179,37 @@ void main(void)
                     dataWrite(time[i]);    //prints time to LCD
                     Systick_us_delay(10);
                 }
+                int Ah = Ahours;
+                int h = hours;
+                int Am = Amins;
+                int m = mins;
+
+
+                if ( (Ah == h) && ( (Am - m) <= 5) )
+                            {
+                            car = 1;
+                            }
+                        else if ((Ah > h) && ((Ah - h) < 2) && (Am <= 4) && (m > 55) && ((m - Am) == 55))
+                            {
+                            car = 1;
+                            }
+                        else if ((Ah == 0) && (h == 24) && (Am <= 4) && (m > 55) && ((m - Am) == 55)) {
+                            car = 1;
+                        }
+                        if (car == 1)
+                        {
+                            if (b == 1)
+                            {
+                                brightness += 100;
+                                int bright;
+                                bright = brightness;
+                                brighter();
+                                b = 0;
+
+                            }
+
+                       }
+
             }
 
             if(alarm_update){
@@ -187,14 +229,7 @@ void main(void)
 
                 alarm_update = 0;
             }
-            //            if ( Ahours==hours && (Amins-mins) < 5) a = 1;
-            //            else if ((Ahours > hours) && ((Ahours - hours) < 2) && (Amins <= 4) && (mins > 55) && ((mins - Amins) == 55)) a = 1;
-            //            else if ((Ahours == 0) && (hours == 24) && (Amins <= 4) && (mins > 55) && ((mins - Amins) == 55)) a = 1;
-            //            if (a)
-            //            {
-            //                b = 0;
-            //                a = 0;
-            //            }
+
 
 
 
@@ -243,8 +278,9 @@ void RTC_C_IRQHandler()
 
         static int light = 0;
         light++;
-        if (light%3 == 0)
+        if (light%3 == 0){
             b = 1;
+        }
         time_update = 1;
         RTC_C->PS1CTL &= ~BIT0;
     }
@@ -481,4 +517,131 @@ void setupSerial()
     EUSCI_A0->IE |= BIT0;      // Enable interrupt
     NVIC_EnableIRQ(EUSCIA0_IRQn);
 }
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * initializing timers and PWM for both motors and LEDs
+ * Inputs: N/A
+ * Outputs: LED PWMs and both motor PWM
+ ***************************************************** */
+void initializePWMports(){
 
+    P6->SEL0 |= (BIT6|BIT7);    //PWM for blue and red
+    P6->SEL1 &= ~(BIT6|BIT7);
+    P6->DIR |= (BIT6|BIT7);     //set as output
+    P6->OUT &= ~(BIT6|BIT7);
+
+    TIMER_A2->CCR[0] = 2999;  //1000 clocks = 0.333 ms.  This is the period of everything on Timer A0.  0.333 < 16.666 ms so the on/off shouldn't
+    //be visible with the human eye.  1000 makes easy math to calculate duty cycle.  No particular reason to use 1000.
+
+
+    TIMER_A2->CCTL[3] = 0b0000000011100000;
+    TIMER_A2->CCR[3] = 0;  //P6.6 RED
+    TIMER_A2->CCTL[4] = 0b0000000011100000;
+    TIMER_A2->CCR[4] = 0;  //P6.7 BLUE
+
+    //The next line turns on all of Timer A0.  None of the above will do anything until Timer A0 is started.
+    TIMER_A2->CTL = 0b0000001000010100;  //up mode, smclk, taclr to load.  Up mode configuration turns on the output when CCR[1] is reached
+    //and off when CCR[0] is reached. SMCLK is the master clock at 3,000,000 MHz.  TACLR must be set to load
+    //in the changes to CTL register.
+
+}
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * turns on and off the lights
+ * Inputs: N/A
+ * Outputs: N/A
+ ***************************************************** */
+void brighter()
+{
+    TIMER_A2->CCR[3] = brightness;
+    TIMER_A2->CCR[4] = brightness;
+}
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * initializing buttons for interrupts
+ * Inputs: buttons for emergency stop and light switch
+ * Outputs: N/A
+ ***************************************************** */
+//void butt_init(void)
+//{
+//    P6->DIR &= ~(BIT0); //input
+//    P6->REN = (BIT0);
+//    P6->OUT = (BIT0);
+//    P6->IE = (BIT0);    //enable interrupt
+//    P6->IES |= (BIT0);
+//    P6->IFG = 0;    //clear flag
+//
+//    P5->DIR &= ~(BIT7); //input
+//    P5->REN = (BIT7);
+//    P5->OUT = (BIT7);
+//    P5->IE = (BIT7);    //enable interrupt
+//    P5->IES |= (BIT7);
+//    P5->IFG = 0;    //clear flag
+//}
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * debounce for light switch
+ * Inputs: button for lights
+ * Outputs: N/A
+ ***************************************************** */
+//int button_pressed(void)
+//{
+//    int buttonDebounced = 0;
+//    if (!(P5->IN & BIT7))   //if button pressed
+//    {
+//        __delay_cycles(1500); // waits for 5 milliseconds
+//        while (!(P5->IN & BIT7)){}  //waits for button to be released
+//        buttonDebounced =1;
+//    }
+//    return buttonDebounced;
+//}
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * debounce for emergency stop
+ * Inputs: button for emergency stop
+ * Outputs: N/A
+ ***************************************************** */
+//int button_pressed2(void)
+//{
+//    int buttonDebounced = 0;
+//    if (!(P6->IN & BIT0))   //if button pressed
+//    {
+//        __delay_cycles(1500); // waits for 5 milliseconds
+//        while (!(P6->IN & BIT0)){}  //wait for button to be released
+//        buttonDebounced =1;
+//    }
+//    return buttonDebounced;
+//}
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * Written by MJ and BF
+ * interrupt for emergency stop
+ * Inputs: button for emergency stop
+ * Outputs: N/A
+ ***************************************************** */
+//void PORT6_IRQHandler(void){
+//    P6->IFG = 0x00; //clears intrrupt flag
+//    if(!(P6->IN & BIT0)){   // if interrupt flag triggered
+//
+//        int b;
+//    }
+//}
+///********************************************************
+// * Michael James     Bryanna Flowers
+// * Written by MJ and BF
+// * interrupt for light switch
+// * Inputs: button for lights
+// * Outputs: N/A
+// ***************************************************** */
+//void PORT5_IRQHandler(void){
+//    P5->IFG = 0x00; //clears interrupt flag
+//    if(!(P5->IN & BIT7)){   //if interrupt flag triggered
+//        lightswitch1(); //turn lights on or off
+//    }
+//}
+//
