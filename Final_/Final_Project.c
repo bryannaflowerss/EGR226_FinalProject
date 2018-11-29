@@ -35,7 +35,7 @@ char INPUT_BUFFER[BUFFER_SIZE];
 uint8_t storage_location = 0; // used in the interrupt to store new data
 uint8_t read_location = 0; // used in the main application to read valid data that hasn't been read yet
 int newcom = 0;
-
+int b = 0;
 int time_update = 1, alarm_update = 1;
 uint8_t hours, mins, secs, Ahours=12, Amins=00, Shours=12, Smins=00, Ssecs=00;
 
@@ -123,46 +123,80 @@ void main(void)
                                                newcom = 0;
                                            }
                                        }
-                }
+
+            else if (string[0] == 'R' && string[1] == 'E' && string[2] == 'A' && string[3] == 'D' && string[4] == 'T' && string[5] == 'I' && string[6] == 'M' && string[7] == 'E')
+            {
+                if (hours == 0)                         sprintf(time, "%02d:%02d:%02d", hours+12,mins,secs);
+                else if (hours>12 && hours<22)          sprintf(time, " %01d:%02d:%02d", hours-12,mins,secs);
+                else if (hours==12)                     sprintf(time, "%02d:%02d:%02d", hours,mins,secs);
+                else if(hours>=22)                      sprintf(time, "%02d:%02d:%02d", hours-12,mins,secs);
+                else if (hours < 10)                    sprintf(time, " %01d:%02d:%02d", hours,mins,secs);
+                else                                    sprintf(time, "%02d:%02d:%02d", hours,mins,secs);
+
+                writeOutput(time);    //prints valid to serial
+                writeOutput("\n");
+            }
+            else if (string[0] == 'R' && string[1] == 'E' && string[2] == 'A' && string[3] == 'D' && string[4] == 'A' && string[5] == 'L' && string[6] == 'A' && string[7] == 'R' && string[8] == 'M')
+            {
+                if (Ahours == 0)                        sprintf(Atime, "%02d:%02d", Ahours+12,Amins);
+                else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d", Ahours-12,Amins);
+                else if (Ahours==12)                    sprintf(Atime, "%02d:%02d", Ahours,Amins);
+                else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d", Ahours-12,Amins);
+                else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d", Ahours,Amins);
+                else                                    sprintf(Atime, "%02d:%02d", Ahours,Amins);
+                writeOutput(Atime);    //prints valid to serial
+                writeOutput("\n");
+            }
             newcom = 0;
+            }
         }
 
         switch (state){
         case CLOCK:
-        if(time_update){
-            time_update = 0;
-            printf("%02d:%02d:%02d\n",hours,mins,secs);
-            if (hours == 0)                         sprintf(time, "%02d:%02d:%02d AM", hours+12,mins,secs);
-            else if (hours>12 && hours<22)          sprintf(time, " %01d:%02d:%02d PM", hours-12,mins,secs);
-            else if (hours==12)                     sprintf(time, "%02d:%02d:%02d PM", hours,mins,secs);
-            else if(hours>=22)                      sprintf(time, "%02d:%02d:%02d PM", hours-12,mins,secs);
-            else if (hours < 10)                    sprintf(time, " %01d:%02d:%02d AM", hours,mins,secs);
-            else                                    sprintf(time, "%02d:%02d:%02d AM", hours,mins,secs);
-            write_command(0x82);
-            for (i=0; i<11; i++)
-            {
-                dataWrite(time[i]);    //prints time to LCD
-                Systick_us_delay(10);
-            }
-        }
-
-        if(alarm_update){
-            printf("ALARM\n");
-            if (Ahours == 0)                        sprintf(Atime, "%02d:%02d AM", Ahours+12,Amins);
-            else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d PM", Ahours-12,Amins);
-            else if (Ahours==12)                    sprintf(Atime, "%02d:%02d PM", Ahours,Amins);
-            else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d PM", Ahours-12,Amins);
-            else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d AM", Ahours,Amins);
-            else                                    sprintf(Atime, "%02d:%02d AM", Ahours,Amins);
-            write_command(0x93);
-            for (i=0; i<8; i++)
-            {
-                dataWrite(Atime[i]);    //prints time to LCD
-                Systick_us_delay(10);
+            if(time_update){
+                time_update = 0;
+                printf("%02d:%02d:%02d\n",hours,mins,secs);
+                if (hours == 0)                         sprintf(time, "%02d:%02d:%02d AM", hours+12,mins,secs);
+                else if (hours>12 && hours<22)          sprintf(time, " %01d:%02d:%02d PM", hours-12,mins,secs);
+                else if (hours==12)                     sprintf(time, "%02d:%02d:%02d PM", hours,mins,secs);
+                else if(hours>=22)                      sprintf(time, "%02d:%02d:%02d PM", hours-12,mins,secs);
+                else if (hours < 10)                    sprintf(time, " %01d:%02d:%02d AM", hours,mins,secs);
+                else                                    sprintf(time, "%02d:%02d:%02d AM", hours,mins,secs);
+                write_command(0x82);
+                for (i=0; i<11; i++)
+                {
+                    dataWrite(time[i]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
             }
 
-        alarm_update = 0;
-        }
+            if(alarm_update){
+                printf("ALARM\n");
+                if (Ahours == 0)                        sprintf(Atime, "%02d:%02d AM", Ahours+12,Amins);
+                else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d PM", Ahours-12,Amins);
+                else if (Ahours==12)                    sprintf(Atime, "%02d:%02d PM", Ahours,Amins);
+                else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d PM", Ahours-12,Amins);
+                else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d AM", Ahours,Amins);
+                else                                    sprintf(Atime, "%02d:%02d AM", Ahours,Amins);
+                write_command(0x93);
+                for (i=0; i<8; i++)
+                {
+                    dataWrite(Atime[i]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
+
+                alarm_update = 0;
+            }
+            //            if ( Ahours==hours && (Amins-mins) < 5) a = 1;
+            //            else if ((Ahours > hours) && ((Ahours - hours) < 2) && (Amins <= 4) && (mins > 55) && ((mins - Amins) == 55)) a = 1;
+            //            else if ((Ahours == 0) && (hours == 24) && (Amins <= 4) && (mins > 55) && ((mins - Amins) == 55)) a = 1;
+            //            if (a)
+            //            {
+            //                b = 0;
+            //                a = 0;
+            //            }
+
+
 
         break;
 
@@ -192,7 +226,7 @@ void RTC_Init(){
     //Alarm at 2:46 pm
     RTC_C->AMINHR = Ahours<<8 | Amins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
     RTC_C->ADOWDAY = 0;
-    RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
+    RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt
 
     RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
     RTC_C->CTL13 = 0;
@@ -206,13 +240,11 @@ void RTC_C_IRQHandler()
         hours = RTC_C->TIM1 & 0x00FF;
         mins = (RTC_C->TIM0 & 0xFF00) >> 8;
         secs = RTC_C->TIM0 & 0x00FF;
-        //        if(secs != 59){
-        //            RTC_C->TIM0 = RTC_C->TIM0 + 1;
-        //        }
-        //        else {
-        //            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;
-        //            time_update = 1;
-        //        }
+
+        static int light = 0;
+        light++;
+        if (light%3 == 0)
+            b = 1;
         time_update = 1;
         RTC_C->PS1CTL &= ~BIT0;
     }
