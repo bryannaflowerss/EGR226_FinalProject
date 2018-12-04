@@ -439,7 +439,7 @@ void main(void){
             if(setT==2){
                 setT=0;     //clearing so that if the button is pressed again it begins at 0
                 RTC_Init();
-                write_command(0x0F);
+                write_command(0x0C);
                 state = CLOCK;
             }
             break;
@@ -452,7 +452,7 @@ void main(void){
             setalarm();
             if(setA==2){
                 setA = 0;
-                write_command(0x0F);
+                write_command(0x0C);
                 RTC_Init();
                 state = CLOCK;
             }
