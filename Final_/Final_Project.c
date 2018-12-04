@@ -14,6 +14,8 @@ void RTC_Init();
 void GeneralRTC_Init();
 void ButtonRTC_Init();
 void SetupTimerAlarm(void);
+void PortADC_init(void);
+void ADC14_init(void);
 
 void LCD_pin_init(void);
 void write_command(uint8_t command);
@@ -53,6 +55,7 @@ int SD = 0; //global flag for snooze down button
 int newcom = 0;
 int al = 0;
 int b = 0;
+int c = 0;
 int time_update = 1, alarm_update = 1;
 int hours = 0, mins = 00, secs = 00;
 int Ahours=12, Amins=6, Shours=12, Smins=00, Ssecs=00;
@@ -61,8 +64,6 @@ int timebutton = 0; //flag for time button interrupt
 int alarmbutton =0; //flag for alarm button interrupt
 int setT=0;      //flag for adjusting the hours or mins for time
 int setA=0;
-
-
 
 void main(void){
     WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
@@ -76,9 +77,14 @@ void main(void){
     int car = 0;
     int validh = 0;
     int validm = 0;
-    int valids =0;
+    int valids = 0;
     char time[10];
     char Atime[0];
+    char temp[50];
+    float volt =0;
+    float cel = 0;
+    float fare = 0;
+    static volatile uint16_t result;
 
     SetupTimerAlarm();
 
@@ -93,7 +99,10 @@ void main(void){
     ALARMbutton_pressed();  //P5.7
     ONOFFbutton_pressed(); //P3.2
     SNOOZEbutton_pressed();  //P3.3
+    PortADC_init();
+    ADC14_init();
 
+    NVIC->ISER[0] = 1 << ((ADC14_IRQn) & 31);   //enables ADC interrupt in  NVIC
 
     NVIC_EnableIRQ(PORT6_IRQn); //allowing the interrupt for the setT time button
     NVIC_EnableIRQ(PORT5_IRQn); //allowing the interrupt for the set alarm button
@@ -103,6 +112,24 @@ void main(void){
 
     enum states state = CLOCK;       //sets the state immediately to MENU
     while(1){
+        ADC14->CTL0 |= ADC14_CTL0_SC;    //starts conversion
+        while(!(ADC14->IFGR0));         //waits for it to complete
+        result = ADC14->MEM[0];         //get value from the ADC
+        volt = (result*3.3)/16384;      //calculate volts
+        cel =  ((volt * 1000.0) - 500) / 10;
+        fare = (cel * 9/5) + 32;
+        write_command(0xD5);
+        sprintf(temp, "%f", fare);
+        Systick_us_delay(10);
+        for (i=0; i<4; i++)
+        {
+            dataWrite(temp[i]);
+            Systick_us_delay(10);
+        }
+        dataWrite(0xDF);
+        Systick_us_delay(10);
+        dataWrite(0x46);
+        Systick_us_delay(10);
         if (newcom){
             readInput(string); // Read the input up to \n, store in string.  This function doesn't return until \n is received
             if(string[0] != '\0'){ // if string is not empty, check the inputted data.
@@ -180,7 +207,7 @@ void main(void){
                     else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d", Ahours-12,Amins);
                     else if (Ahours==12)                    sprintf(Atime, "%02d:%02d", Ahours,Amins);
                     else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d", Ahours-12,Amins);
-                    else if (Ahours < 10 && Ahours > 0)                   sprintf(Atime, " %01d:%02d", Ahours,Amins);
+                    else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d", Ahours,Amins);
                     else                                    sprintf(Atime, "%02d:%02d", Ahours,Amins);
 
                     writeOutput(Atime);    //prints valid to serial
@@ -212,30 +239,28 @@ void main(void){
                 int Am = Amins;
                 int m = mins;
 
-                if ( (Ah == h) && ( (Am - m) <= 5) && (Am - m) >= 0)
-                {
-                    car = 1;
-                }
-                else if ((Ah > h) && ((Ah - h) < 2) && (Am <= 4) && (m > 55) && ((m - Am) == 55))
-                {
-                    car = 1;
-                }
-                else if ((Ah == 0) && (h == 23) && (Am <= 4) && (m >= 55) && ((m - Am) == 55)) {
-                    car = 1;
-                }
-                if (car == 1 && (status == 1 || status == 2))
-                {
-                    if (b == 1)
-                    {
+                if ( (Ah == h) && ( (Am - m) <= 5) && (Am - m) >= 0 && (status == 1 || status == 2))    car = 1;
 
-                        brightness += 100;
-                        int bright;
-                        bright = brightness;
-                        brighter();
-                        b = 0;
-                    }
+                else if ((Ah > h) && ((Ah - h) < 2) && (Am <= 4) && (m > 55) && ((m - Am) == 55) && (status == 1 || status == 2))   car = 1;
+
+
+                else if ((Ah == 0) && (h == 23) && (Am <= 4) && (m >= 55) && ((m - Am) == 55) && (status == 1 || status == 2))  car=1;
+
+                else car = 0;
+
+                if (b == 1 && car == 1)
+                {
+                    brightness += 100;
+                    brighter();
+                    b = 0;
                 }
-                else if (status == 2 || status == 0)
+                else if (c == 1  && car == 1)
+                {
+                    brightness += 600;
+                    brighter();
+                    c = 0;
+                }
+                else if (status == 0)
                 {
                     brightness = 0;
                     brighter();
@@ -247,7 +272,7 @@ void main(void){
                 else if (Ahours>12 && Ahours<22)        sprintf(Atime, " %01d:%02d PM", Ahours-12,Amins);
                 else if (Ahours==12)                    sprintf(Atime, "%02d:%02d PM", Ahours,Amins);
                 else if(Ahours>=22)                     sprintf(Atime, "%02d:%02d PM", Ahours-12,Amins);
-                else if (Ahours < 10  && Ahours > 0)                   sprintf(Atime, " %01d:%02d AM", Ahours,Amins);
+                else if (Ahours < 10)                   sprintf(Atime, " %01d:%02d AM", Ahours,Amins);
                 else                                    sprintf(Atime, "%02d:%02d AM", Ahours,Amins);
                 write_command(0x94);
                 for (i=0; i<8; i++)
@@ -305,7 +330,6 @@ void main(void){
                 dataWrite('E');
                 Systick_us_delay(10);
             }
-
             if(timebutton ==1){     //checking flag for the time button
                 timebutton=0;
                 if(TIMEbutton_pressed())    state = SETTIME;
@@ -336,6 +360,8 @@ void main(void){
                 {
                     status = 0; // alarm turn off
                     sound = 0;
+                    brightness = 0;
+                    brighter();
                 }
             }
             else if (OOU == 1 && status == 2)
@@ -345,6 +371,8 @@ void main(void){
                 {
                     status = 0; // alarm turn off
                     sound = 0;
+                    brightness = 0;
+                    brighter();
                 }
             }
             else if (SD == 1 && sound == 1)
@@ -356,35 +384,52 @@ void main(void){
                     status = 2;//snooze mode
                     car = 0;
                     alarm_update = 1;
+                    brightness = 0;
+                    brighter();
                     if (m < 50)
                     {
-                        Amins = Amins + 10;
+                        Ahours = hours;
+                        Amins = mins + 10;
+                        Smins = mins;
+                        Shours = hours;
+                        Ssecs = secs;
                         RTC_Init();
                     }
                     else if (m > 50 && h < 23)
                     {
 
-                        Amins = Amins - 50;
-                        Ahours = Ahours + 1;
+                        Amins = mins - 50;
+                        Ahours = hours + 1;
+                        Smins = mins;
+                        Shours = hours;
+                        Ssecs = secs;
                         RTC_Init();
                     }
                     else if ( m > 50 && h == 23)
                     {
-                        Amins = Amins - 50;
+                        Amins = mins - 50;
                         Ahours = 0;
+                        Smins = mins;
+                        Shours = hours;
+                        Ssecs = secs;
                         RTC_Init();
                     }
                 }
             }
-            if (h == Ah && Am == m && (s == 0 || speed == 1) && ((status == 1) || (status == 2)))   sound = 1;
-
+            if (h == Ah && Am == m && (s == 0 || speed == 1) && ((status == 1) || (status == 2)))
+            {
+                sound = 1;
+            }
             if (sound == 1 && al == 1)
             {
                 TIMER_A1->CCR[2]=1500000/450;
                 al = 0;
             }
-            else    TIMER_A1->CCR[2] = 0;
+            else{
+                TIMER_A1->CCR[2] = 0;
+            }
             break;
+
         case SETTIME:
             if (setT==0)
                 write_command(0x83);
@@ -394,7 +439,7 @@ void main(void){
             if(setT==2){
                 setT=0;     //clearing so that if the button is pressed again it begins at 0
                 RTC_Init();
-                write_command(0x0C);
+                write_command(0x0F);
                 state = CLOCK;
             }
             break;
@@ -407,7 +452,7 @@ void main(void){
             setalarm();
             if(setA==2){
                 setA = 0;
-                write_command(0x0C);
+                write_command(0x0F);
                 RTC_Init();
                 state = CLOCK;
             }
@@ -483,7 +528,7 @@ void setalarm(){
                     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
                 }
             }
-            else if (Ahours < 10  && Ahours > 0){
+            else if (Ahours < 10){
                 if (Amins >= 0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 1 AM and 9 AM
                 else if (Amins == 60){
                     Amins=0;
@@ -522,6 +567,7 @@ void setalarm(){
             }
         }
     }
+
     if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
         if(setA == 0){    //decreasing the hours
             Ahours--;
@@ -549,8 +595,9 @@ void setalarm(){
         }
         if (setA==1){       //decreasing the minutes
             Amins--;
+
             if (Ahours == 0){     //12 AM
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
                 else if (Amins <= 0){
                     Amins=59;
                     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
@@ -577,9 +624,8 @@ void setalarm(){
                     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
                 }
             }
-            else if (Ahours > 0 && Ahours < 10){
-                if(Amins > 0 && Amins <= 59)    sprintf(butAtime, " %01d:%02d AM", Ahours, Amins);          //b/w 1 AM and 9 AM
-//                if (Amins >0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02 AM", Ahours ,Amins);         //b/w 1 AM and 9 AM
+            else if (Ahours >0 && Ahours < 10){
+                if (Amins >= 0 && Amins <= 59)      sprintf(butAtime, " %01d:%02d AM", Ahours, Amins);
                 else if (Amins <= 0){
                     Amins=59;
                     sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);
@@ -587,7 +633,7 @@ void setalarm(){
             }
             else if(Ahours > 23){
                 Ahours=0;
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
                 else if (Amins <= 0){
                     Amins=59;
                     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
@@ -595,14 +641,14 @@ void setalarm(){
             }
             else if(Ahours < 0){
                 Ahours =23;
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
+                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
                 else if(Amins <= 0){
                     Amins =59;
                     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
                 }
             }
             else{
-                if (Amins >0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
                 else if (Amins <= 0){
                     Amins=59;
                     sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
@@ -617,7 +663,6 @@ void setalarm(){
             }
         }
     }
-
 }
 
 void settime(){
@@ -627,13 +672,13 @@ void settime(){
 
     int j =0; //flag for writing to LCD
 
-
     if(timebutton ==1){ //flag for time button interrupt
         timebutton=0;   //time button flag
         if(TIMEbutton_pressed()){       //debouncing the button press
             setT++;
         }
     }
+
     if(ONOFFbutton_pressed()){  //if ON/OFF/Up button is pressed we are increasing the hours or minutes
         if(setT == 0){    //increasing the hours
             Shours++;
@@ -689,7 +734,7 @@ void settime(){
                     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);
                 }
             }
-            else if (Shours < 10 && Shours >0){
+            else if (Shours < 10){
                 if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
                 else if (Smins == 60){
                     Smins=0;
@@ -728,6 +773,7 @@ void settime(){
             }
         }
     }
+
     if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
         if(setT == 0){    //decreasing the hours
             Shours--;
@@ -826,7 +872,6 @@ void settime(){
 
 void RTC_Init(){
     //Initialize time to input from serial
-    //    RTC_C->TIM0 = 0x2D00;  //45 min, 0 secs
     RTC_C->CTL0 = (0xA500);
     RTC_C->CTL13 = 0;
 
@@ -836,7 +881,9 @@ void RTC_Init(){
     //Alarm at 2:46 pm
     RTC_C->AMINHR = Ahours<<8 | Amins | BIT(15) | BIT(7);  //bit 15 and 7 are Alarm Enable bits
     RTC_C->ADOWDAY = 0;
-    RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt
+
+    if (speed)  RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
+    else  RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt
 
     RTC_C->CTL0 = (0xA500) | BIT5; //turn on interrupt
     RTC_C->CTL13 = 0;
@@ -853,17 +900,13 @@ void RTC_C_IRQHandler()
         mins = (RTC_C->TIM0 & 0xFF00) >> 8;
         if(mins > 59) RTC_C->TIM0 = 0<<8;
         secs = RTC_C->TIM0 & 0x00FF;
-        static int alrm = 0;
-        static int light = 0;
-        alrm++;
-        if (alrm%2 == 0)
-            al = 1;
-        light++;
-        if (light%3 == 0){
-            b = 1;
-        }
+
         if (speed == 1)
         {
+            static int alrm = 0;
+            static int light = 0;
+            c = 1;
+
             if (mins>59) RTC_C->TIM1 = ((RTC_C->TIM1 & 0x00FF)+1);
             if(secs != 59){                                 // If not  59 seconds, add 1 (otherwise 59+1 = 60 which doesn't work)
                 RTC_C->TIM0 = RTC_C->TIM0 + 1;
@@ -871,12 +914,25 @@ void RTC_C_IRQHandler()
             else {
                 RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;  // Add a minute if at 59 seconds.  This also resets seconds.
                 // TODO: What happens if minutes are at 59 minutes as well?
+                alrm++;
+                if (alrm%2 == 0)
+                    al = 1;
                 time_update = 1;                                     // Send flag to main program to notify a time update occurred.
             }
             RTC_C->PS1CTL &= ~BIT0;
         }
         else if (speed == 0)
         {
+            static int alrm = 0;
+            static int light = 0;
+
+            alrm++;
+            if (alrm%2 == 0)
+                al = 1;
+            light++;
+            if (light%3 == 0){
+                b = 1;
+            }
             time_update = 1;
             RTC_C->PS1CTL &= ~BIT0;
         }
@@ -1049,6 +1105,8 @@ void Systick_ms_delay(uint16_t delay)
     SysTick -> VAL = 0;
     while((SysTick -> CTRL & 0x00010000) == 0);
 }
+
+
 void EUSCIA0_IRQHandler(void)
 {
     if (EUSCI_A0->IFG & BIT0)  // Interrupt on the receive line
@@ -1091,13 +1149,7 @@ void readInput(char *string)
     while(string[i-1] != 13); // If a \n was just read, break out of the while loop
     string[i-1] = '\0'; // Replace the \n with a \0 to end the string when returning this function
 }
-/********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Sets up the serial communication port
- * Inputs: NA
- * Outputs: NA
- *******************************************************/
+
 void setupSerial()
 {
     // Baud Rate Configuration
@@ -1125,8 +1177,8 @@ void setupSerial()
  * Inputs: N/A
  * Outputs: LED PWMs and both motor PWM
  ***************************************************** */
-void initializePWMports()
-{
+void initializePWMports(){
+
     P6->SEL0 |= (BIT6|BIT7);    //PWM for blue and red
     P6->SEL1 &= ~(BIT6|BIT7);
     P6->DIR |= (BIT6|BIT7);     //set as output
@@ -1144,11 +1196,12 @@ void initializePWMports()
     TIMER_A2->CTL = 0b0000001000010100;  //up mode, smclk, taclr to load.  Up mode configuration turns on the output when CCR[1] is reached
     //and off when CCR[0] is reached. SMCLK is the master clock at 3,000,000 MHz.  TACLR must be set to load
     //in the changes to CTL register.
+
 }
 /********************************************************
  * Michael James     Bryanna Flowers
  * Written by MJ and BF
- * Sets the level of brightness for each LED
+ * turns on and off the lights
  * Inputs: N/A
  * Outputs: N/A
  ***************************************************** */
@@ -1297,7 +1350,8 @@ void PORT5_IRQHandler(void){
  * Inputs: buttons for turning on and off the alarm as well
  * as snoozing the alarm 3.2 (on/off/up) 3.3 (snooze/down)
  * Outputs: N/A
- *******************************************************/
+ ***************************************************** */
+
 void PORT3_IRQHandler(void){
     P3->IFG = 0x00; //clears intrrupt flag
     if(!(P3->IN & BIT2)){   // if interrupt flag triggered
@@ -1321,16 +1375,17 @@ void SetupTimerAlarm()
 
 void PORT1_IRQHandler(void)
 {
-    if(P1->IFG & BIT1) {                        //If P1.1 had an interrupt
-        RTC_C->PS1CTL = 0b11010;                //1/64 second interrupt
+    if(P1->IFG & BIT1) {                                //If P1.1 had an interrupt
+        RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt
         speed = 0;
     }
-    if(P1->IFG & BIT4) {                        //If P1.4 had an interrupt
-        RTC_C->PS1CTL = 0b00010;                //1/64 second interrupt
+    if(P1->IFG & BIT4) {                                //If P1.4 had an interrupt
+        RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
         speed = 1;
     }
-    P1->IFG = 0;                                //Clear all flags
+    P1->IFG = 0;                                        //Clear all flags
 }
+
 void P1_Init() {
     P1->SEL0 &= ~(BIT1|BIT4);
     P1->SEL1 &= ~(BIT1|BIT4);
@@ -1341,4 +1396,17 @@ void P1_Init() {
     P1->IFG = 0;
     NVIC_EnableIRQ(PORT1_IRQn);
 }
-
+void PortADC_init(void)
+{
+    P5->SEL0 |= BIT5;   //sets pin 5.5 as A0 input
+    P5->SEL1 |= BIT5;
+}
+void ADC14_init(void)
+{
+    ADC14->CTL0 &= ~ADC14_CTL0_ENC;    //turns off ADC converter while initializing
+    ADC14->CTL0 |= 0x04200210;         //16 sample clocks, SMCLK, S/H pulse
+    ADC14->CTL1 =  0x00000030;         //14 bit resolution
+    ADC14->CTL1 |= 0x00000000;         //convert for mem0 register
+    ADC14->MCTL[0]=0x00000000;         //mem[0] to ADC14INCHx = 0
+    ADC14->CTL0 |= ADC14_CTL0_ENC;     //enables ADC14ENC and starts ADC after configuration
+}
