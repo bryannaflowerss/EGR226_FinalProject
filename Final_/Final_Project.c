@@ -9,11 +9,11 @@ enum states{
     SNOOZE,
     TURN,
 };
-//another test bc github deleted my last two
-//from
+
 void RTC_Init();
 void GeneralRTC_Init();
 void ButtonRTC_Init();
+void SetupTimerAlarm(void);
 
 void LCD_pin_init(void);
 void write_command(uint8_t command);
@@ -36,6 +36,8 @@ int TIMEbutton_pressed();
 int ALARMbutton_pressed();
 int ONOFFbutton_pressed();
 int SNOOZEbutton_pressed();
+int speed = 0;
+void P1_Init();
 
 void setupSerial(); // Sets up serial for use and enables interrupts
 void writeOutput(char *string); // write output charactrs to the serial port
@@ -49,6 +51,7 @@ uint8_t read_location = 0; // used in the main application to read valid data th
 int OOU = 0; //global flag for on off button
 int SD = 0; //global flag for snooze down button
 int newcom = 0;
+int al = 0;
 int b = 0;
 int time_update = 1, alarm_update = 1;
 uint8_t hours = 0, mins = 00, secs = 00;
@@ -59,14 +62,17 @@ int alarmbutton =0; //flag for alarm button interrupt
 int setT=0;      //flag for adjusting the hours or mins for time
 int setA=0;
 
-void main(void){
+
+
+    void main(void){
     WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;     // stop watchdog timer
     char string[BUFFER_SIZE]; // Creates local char array to store incoming serial commands
     setupSerial();
     INPUT_BUFFER[0]= '\0';  // Sets the global buffer to initial condition of empty
-    int sound = 0; //flag if alarm is sounding
+
     int status = 0; //flag sets alarm status to off
     int i;
+    int sound = 0;
     int car = 0;
     int validh = 0;
     int validm = 0;
@@ -74,10 +80,13 @@ void main(void){
     char time[10];
     char Atime[0];
 
+    SetupTimerAlarm();
+
     initializePWMports();       //lights
     SysTick_Init();             //delays
     LCD_pin_init();             //initializing the LCD
     LCD_init();                 //beginning the cursor at the top left corner
+    P1_Init();
     RTC_Init();                 //initializing the real time clock
     butt_init();                //initializing each button used
     TIMEbutton_pressed();   //P6.0
@@ -85,12 +94,15 @@ void main(void){
     ONOFFbutton_pressed(); //P3.2
     SNOOZEbutton_pressed();  //P3.3
 
-    //Enables interrupts for each port that the buttons are on
-    __enable_interrupt();
+
+
+
 
     NVIC_EnableIRQ(PORT6_IRQn); //allowing the interrupt for the setT time button
     NVIC_EnableIRQ(PORT5_IRQn); //allowing the interrupt for the set alarm button
-    NVIC_EnableIRQ(PORT3_IRQn); //allowing the interrupts for ON/OFF/Up and Snooze/Down buttons
+        NVIC_EnableIRQ(PORT3_IRQn); //allowing the interrupts for ON/OFF/Up and Snooze/Down buttons
+        //Enables interrupts for each port that the buttons are on
+           __enable_interrupt();
 
     enum states state = CLOCK;       //sets the state immediately to MENU
     while(1){
@@ -205,7 +217,7 @@ void main(void){
                 int Am = Amins;
                 int m = mins;
 
-                if ( (Ah == h) && ( (Am - m) <= 5) )
+                if ( (Ah == h) && ( (Am - m) <= 5) && (Am - m) >= 0)
                 {
                     car = 1;
                 }
@@ -213,10 +225,10 @@ void main(void){
                 {
                     car = 1;
                 }
-                else if ((Ah == 0) && (h == 24) && (Am <= 4) && (m > 55) && ((m - Am) == 55)) {
+                else if ((Ah == 0) && (h == 23) && (Am <= 4) && (m >= 55) && ((m - Am) == 55)) {
                     car = 1;
                 }
-                if (car == 1 && status == 1)
+                if (car == 1 && (status == 1 || status == 2))
                 {
                     if (b == 1)
                     {
@@ -228,11 +240,11 @@ void main(void){
                         b = 0;
                     }
                 }
-                else if (status == 3 || status == 0)
-                {
+                else if (status == 2 || status == 0)
+                    {
                     brightness = 0;
                     brighter();
-                }
+                    }
             }
 
             if(alarm_update){
@@ -253,6 +265,10 @@ void main(void){
             }
             if(status == 1)
             {
+                dataWrite(' ');
+                Systick_us_delay(10);
+                dataWrite(' ');
+                Systick_us_delay(10);
                 write_command(0xC7)  ;
                 dataWrite('O');
                 Systick_us_delay(10);
@@ -262,23 +278,19 @@ void main(void){
                 Systick_us_delay(10);
                 dataWrite(' ');
                 Systick_us_delay(10);
-                dataWrite(' ');
-                Systick_us_delay(10);
-                dataWrite(' ');
-                Systick_us_delay(10);
             }
             else if(status == 0)
             {
-                write_command(0xC7)  ;
+                write_command(0xC5)  ;
+                dataWrite(' ');
+                Systick_us_delay(10);
+                dataWrite(' ');
+                Systick_us_delay(10);
                 dataWrite('O');
                 Systick_us_delay(10);
                 dataWrite('F');
                 Systick_us_delay(10);
                 dataWrite('F');
-                Systick_us_delay(10);
-                dataWrite(' ');
-                Systick_us_delay(10);
-                dataWrite(' ');
                 Systick_us_delay(10);
                 dataWrite(' ');
                 Systick_us_delay(10);
@@ -313,6 +325,7 @@ void main(void){
             int h = hours;
             int Am = Amins;
             int m = mins;
+            int s = secs;
             if (OOU == 1 && status == 0)
             {
                 OOU = 0;
@@ -322,7 +335,16 @@ void main(void){
                     sound = 0;
                 }
             }
-            if (OOU == 1 && status == 1)
+            else if (OOU == 1 && status == 1)
+            {
+                OOU = 0;
+                if(ONOFFbutton_pressed())
+                {
+                    status = 0; // alarm turn off
+                    sound = 0;
+                }
+            }
+            else if (OOU == 1 && status == 2)
             {
                 OOU = 0;
                 if(ONOFFbutton_pressed())
@@ -332,22 +354,26 @@ void main(void){
                 }
             }
 
-            if (SD == 1 && sound == 1)
+
+            else if (SD == 1 && sound == 1)
             {
                 SD = 0;
                 if(SNOOZEbutton_pressed())
                 {
+                    sound = 0;
                     status = 2;//snooze mode
+                    car = 0;
+                    alarm_update = 1;
                     if (m < 50)
                     {
-                        Amins = Amins + 10;
-                        RTC_Init();
+                    Amins = Amins + 10;
+                    RTC_Init();
                     }
                     else if (m > 50 && h < 23)
                     {
 
                         Amins = Amins - 50;
-                        Ahours + Ahours + 1;
+                        Ahours = Ahours + 1;
                         RTC_Init();
                     }
                     else if ( m > 50 && h == 23)
@@ -359,15 +385,25 @@ void main(void){
                 }
             }
 
-            if (h == Ah && Am == m)
+            if (h == Ah && Am == m && (s == 0 || speed == 1) && ((status == 1) || (status == 2)))
             {
                 sound = 1;
             }
+
+            if (sound == 1 && al == 1)
+            {
+                TIMER_A1->CCR[2]=1500000/450;
+                al = 0;
+            }
+            else{
+                TIMER_A1->CCR[2] = 0;
+            }
+
             break;
 
         case SETTIME:
             if (setT==0)
-                write_command(0x83);
+            write_command(0x83);
             if (setT==1)
                 write_command(0x86);
             settime();
@@ -377,6 +413,11 @@ void main(void){
                 write_command(0x0C);
                 state = CLOCK;
             }
+
+
+            //            alarm_update=1;
+            //            time_update=1;
+
 
             break;
 
@@ -410,203 +451,204 @@ void setalarm(){
     int j =0; //flag for writing to LCD
 
 
-    if(alarmbutton ==1 ){ //flag for time button interrupt
-        alarmbutton=0;   //time button flag
-        if(ALARMbutton_pressed()){       //debouncing the button press
-            setA++;
+        if(alarmbutton ==1 ){ //flag for time button interrupt
+            alarmbutton=0;   //time button flag
+            if(ALARMbutton_pressed()){       //debouncing the button press
+                setA++;
+            }
         }
-    }
 
-    if(ONOFFbutton_pressed()){  //if ON/OFF/Up button is pressed we are increasing the hours or minutes
-        if(setA == 0){    //increasing the hours
-            Ahours++;
-            if (Ahours == 0)                         sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
-            else if (Ahours>12 && Ahours<22)      sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);      //b/w 1 PM and 9 PM
-            else if (Ahours==12)                     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
-            else if(Ahours>21 && Ahours<24)     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
-            else if (Ahours < 10 && Ahours >0)                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 12 AM and 9 AM
-            else if(Ahours >23){
-                Ahours=0;
-                sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
-            }
-            else if(Ahours < 0){
-                Ahours =23;
-                sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
-            }
-            else                                        sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
-            write_command(0x94);
-            write_command(0x0F);
-            for (j=0; j<8; j++)
-            {
-                dataWrite(butAtime[j]);    //prints time to LCD
-                Systick_us_delay(10);
-            }
-        }
-        if (setA==1){       //increasing the minutes
-            Amins++;
-            if (Ahours == 0){     //12 AM
-                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zero
+        if(ONOFFbutton_pressed()){  //if ON/OFF/Up button is pressed we are increasing the hours or minutes
+            if(setA == 0){    //increasing the hours
+                Ahours++;
+                if (Ahours == 0)                         sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
+                else if (Ahours>12 && Ahours<22)      sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);      //b/w 1 PM and 9 PM
+                else if (Ahours==12)                     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
+                else if(Ahours>21 && Ahours<24)     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
+                else if (Ahours < 10 && Ahours >0)                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 12 AM and 9 AM
+                else if(Ahours >23){
+                    Ahours=0;
+                    sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
                 }
-            }
-            else if (Ahours==12){
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, "%02d:%02d PM", Ahours, Amins);    //12:00 goes back to zerow
-                }
-            }
-            else if (Ahours>12 && Ahours<22){
-                if (Amins > 0 && Amins <= 59 )     sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);      //1-9PM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
-                }
-            }
-            else if(Ahours>21 && Ahours<24){
-                if (Amins >= 0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
-                }
-            }
-            else if (Ahours < 10){
-                if (Amins >= 0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 1 AM and 9 AM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);
-                }
-            }
-            else if(Ahours >23){
-                Ahours=0;
-                if (Amins >= 0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
-                }
-            }
-            else if(Ahours < 0){
-                Ahours =23;
-                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
-                else if(Amins == 60){
-                    Amins =0;
+                else if(Ahours < 0){
+                    Ahours =23;
                     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
                 }
-            }
-            else{
-                if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
-                else if (Amins == 60){
-                    Amins=0;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                else                                        sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                write_command(0x94);
+                write_command(0x0F);
+                for (j=0; j<8; j++)
+                {
+                    dataWrite(butAtime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
                 }
             }
-            write_command(0x94);
-            write_command(0x0F);
-            for (j=0; j<8; j++)
-            {
-                dataWrite(butAtime[j]);    //prints time to LCD
-                Systick_us_delay(10);
+            if (setA==1){       //increasing the minutes
+                Amins++;
+                if (Ahours == 0){     //12 AM
+                    if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                    else if (Amins == 60){
+                        Amins=0;
+                       sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zero
+                    }
+                }
+                else if (Ahours==12){
+                    if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
+                    else if (Amins == 60){
+                        Amins=0;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours, Amins);    //12:00 goes back to zerow
+                    }
+                }
+                else if (Ahours>12 && Ahours<22){
+                    if (Amins > 0 && Amins <= 59 )     sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);      //1-9PM
+                    else if (Amins == 60){
+                        Amins=0;
+                        sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
+                    }
+                }
+                else if(Ahours>21 && Ahours<24){
+                    if (Amins >= 0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
+                    else if (Amins == 60){
+                        Amins=0;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
+                    }
+                }
+                else if (Ahours < 10){
+                    if (Amins >= 0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 1 AM and 9 AM
+                    else if (Amins == 60){
+                        Amins=0;
+                        sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);
+                    }
+                }
+                else if(Ahours >23){
+                    Ahours=0;
+                    if (Amins >= 0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                    else if (Amins == 60){
+                        Amins=0;
+                        sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Ahours < 0){
+                    Ahours =23;
+                    if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
+                    else if(Amins == 60){
+                        Amins =0;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
+                    }
+                }
+                else{
+                    if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                    else if (Amins == 60){
+                        Amins=0;
+                       sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                    }
+                }
+                write_command(0x94);
+                write_command(0x0F);
+                for (j=0; j<8; j++)
+                {
+                    dataWrite(butAtime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
             }
         }
-    }
 
-    if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
-        if(setA == 0){    //decreasing the hours
-            Ahours--;
-            if (Ahours == 0)                         sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);    //12 am
-            else if (Ahours>12 && Ahours<22)      sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);  //b/w 1 PM and 9 PM
-            else if (Ahours==12)                     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
-            else if(Ahours>21 && Ahours<24)       sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
-            else if (Ahours < 10 && Ahours >0)                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 1 AM and 9 AM
-            else if(Ahours >23){
-                Ahours=0;
-                sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
-            }
-            else if(Ahours<0){
-                Ahours = 23;
-                sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
-            }
-            else                                        sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
-            write_command(0x94);
-            write_command(0x0F);
-            for (j=0; j<8; j++)
-            {
-                dataWrite(butAtime[j]);    //prints time to LCD
-                Systick_us_delay(10);
-            }
-        }
-        if (setA==1){       //decreasing the minutes
-            Amins--;
-
-            if (Ahours == 0){     //12 AM
-                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
+        if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
+            if(setA == 0){    //decreasing the hours
+                Ahours--;
+                if (Ahours == 0)                         sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);    //12 am
+                else if (Ahours>12 && Ahours<22)      sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);  //b/w 1 PM and 9 PM
+                else if (Ahours==12)                     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
+                else if(Ahours>21 && Ahours<24)       sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and 11 PM
+                else if (Ahours < 10 && Ahours >0)                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);         //b/w 1 AM and 9 AM
+                else if(Ahours >23){
+                    Ahours=0;
+                    sprintf(butAtime, "%02d:%02d AM", Ahours+12,Amins);       //12 am
                 }
-            }
-            else if (Ahours>12 && Ahours<22){
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
-                }
-            }
-            else if (Ahours==12){
-                if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, "%02d:%02d PM", Ahours, Amins);    //12:00 goes back to zerow
-                }
-            }
-            else if(Ahours>21 && Ahours<24){
-                if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and midnight
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
-                }
-            }
-            else if (Ahours < 10){
-                if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02 AM", Ahours,Amins);         //b/w 1 AM and 9 AM
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);
-                }
-            }
-            else if(Ahours > 23){
-                Ahours=0;
-                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
-                }
-            }
-            else if(Ahours < 0){
-                Ahours =23;
-                if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
-                else if(Amins <= 0){
-                    Amins =59;
+                else if(Ahours<0){
+                    Ahours = 23;
                     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
                 }
-            }
-            else{
-                if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
-                else if (Amins <= 0){
-                    Amins=59;
-                    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                else                                        sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                write_command(0x94);
+                write_command(0x0F);
+                for (j=0; j<8; j++)
+                {
+                    dataWrite(butAtime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
                 }
             }
-            write_command(0x94);
-            write_command(0x0F);
-            for (j=0; j<8; j++)
-            {
-                dataWrite(butAtime[j]);    //prints time to LCD
-                Systick_us_delay(10);
+            if (setA==1){       //decreasing the minutes
+                Amins--;
+
+                if (Ahours == 0){     //12 AM
+                    if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
+                    }
+                }
+                else if (Ahours>12 && Ahours<22){
+                    if (Amins >0 && Amins <= 59 )     sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);
+                    }
+                }
+                else if (Ahours==12){
+                    if (Amins >0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours,Amins);          //noon 12 PM
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours, Amins);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Ahours>21 && Ahours<24){
+                    if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //b/w 10 PM and midnight
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);
+                    }
+                }
+                else if (Ahours < 10){
+                    if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, " %01d:%02 AM", Ahours,Amins);         //b/w 1 AM and 9 AM
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, " %01d:%02d AM", Ahours,Amins);
+                    }
+                }
+                else if(Ahours > 23){
+                    Ahours=0;
+                    if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 to 12:59 AM
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, "%02d:%02d AM", Ahours+12, Amins);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Ahours < 0){
+                    Ahours =23;
+                    if (Amins >=0 && Amins <= 59 )     sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
+                    else if(Amins <= 0){
+                        Amins =59;
+                        sprintf(butAtime, "%02d:%02d PM", Ahours-12,Amins);       //11 PM
+                    }
+                }
+                else{
+                    if (Amins >=0 && Amins <= 59 )    sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                    else if (Amins <= 0){
+                        Amins=59;
+                        sprintf(butAtime, "%02d:%02d AM", Ahours,Amins);
+                    }
+                }
+                write_command(0x94);
+                write_command(0x0F);
+                for (j=0; j<8; j++)
+                {
+                    dataWrite(butAtime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
             }
         }
-    }
+
 }
 
 void settime(){
@@ -617,202 +659,202 @@ void settime(){
     int j =0; //flag for writing to LCD
 
 
-    if(timebutton ==1){ //flag for time button interrupt
-        timebutton=0;   //time button flag
-        if(TIMEbutton_pressed()){       //debouncing the button press
-            setT++;
+        if(timebutton ==1){ //flag for time button interrupt
+            timebutton=0;   //time button flag
+            if(TIMEbutton_pressed()){       //debouncing the button press
+                setT++;
+            }
         }
-    }
 
-    if(ONOFFbutton_pressed()){  //if ON/OFF/Up button is pressed we are increasing the hours or minutes
-        if(setT == 0){    //increasing the hours
-            Shours++;
-            if (Shours == 0)                         sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
-            else if (Shours>12 && Shours<22)      sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);      //b/w 1 PM and 9 PM
-            else if (Shours==12)                     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
-            else if(Shours>21 && Shours<24)     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins, Ssecs);       //b/w 10 PM and 11 PM
-            else if (Shours < 10 && Shours >0)                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins, Ssecs);         //b/w 12 AM and 9 AM
-            else if(Shours >23){
-                Shours=0;
-                sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
-            }
-            else if(Shours<0){
-                Shours =23;
-                sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
-            }
-            else                                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins, Ssecs);
-            write_command(0x82);
-            write_command(0x0F);
-            for (j=0; j<11; j++)
-            {
-                dataWrite(butStime[j]);    //prints time to LCD
-                Systick_us_delay(10);
-            }
-        }
-        if (setT==1){       //increasing the minutes
-            Smins++;
-            if (Shours == 0){     //12 AM
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zero
+        if(ONOFFbutton_pressed()){  //if ON/OFF/Up button is pressed we are increasing the hours or minutes
+            if(setT == 0){    //increasing the hours
+                Shours++;
+                if (Shours == 0)                         sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
+                else if (Shours>12 && Shours<22)      sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);      //b/w 1 PM and 9 PM
+                else if (Shours==12)                     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
+                else if(Shours>21 && Shours<24)     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins, Ssecs);       //b/w 10 PM and 11 PM
+                else if (Shours < 10 && Shours >0)                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins, Ssecs);         //b/w 12 AM and 9 AM
+                else if(Shours >23){
+                    Shours=0;
+                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
                 }
-            }
-            else if (Shours==12){
-                if (Smins >0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, "%02d:%02d:%02d PM", Shours, Smins, Ssecs);    //12:00 goes back to zerow
-                }
-            }
-            else if (Shours>12 && Shours<22){
-                if (Smins >0 && Smins <= 59 )     sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);      //1-9PM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
-                }
-            }
-            else if(Shours>21 && Shours<24){
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and 11 PM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);
-                }
-            }
-            else if (Shours < 10){
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);
-                }
-            }
-            else if(Shours >23){
-                Shours=0;
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
-                }
-            }
-            else if(Shours < 0){
-                Shours =23;
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
-                else if(Smins == 60){
-                    Smins =0;
+                else if(Shours<0){
+                    Shours =23;
                     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
                 }
-            }
-            else{
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
-                else if (Smins == 60){
-                    Smins=0;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                else                                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins, Ssecs);
+                write_command(0x82);
+                write_command(0x0F);
+                for (j=0; j<11; j++)
+                {
+                    dataWrite(butStime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
                 }
             }
-            write_command(0x82);
-            write_command(0x0F);
-            for (j=0; j<11; j++)
-            {
-                dataWrite(butStime[j]);    //prints time to LCD
-                Systick_us_delay(10);
+            if (setT==1){       //increasing the minutes
+                Smins++;
+                if (Shours == 0){     //12 AM
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zero
+                    }
+                }
+                else if (Shours==12){
+                    if (Smins >0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours, Smins, Ssecs);    //12:00 goes back to zerow
+                    }
+                }
+                else if (Shours>12 && Shours<22){
+                    if (Smins >0 && Smins <= 59 )     sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);      //1-9PM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
+                   }
+                }
+                else if(Shours>21 && Shours<24){
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and 11 PM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);
+                    }
+                }
+                else if (Shours < 10){
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    }
+                }
+                else if(Shours >23){
+                    Shours=0;
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Shours < 0){
+                    Shours =23;
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
+                    else if(Smins == 60){
+                        Smins =0;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
+                    }
+                }
+                else{
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    else if (Smins == 60){
+                        Smins=0;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    }
+                }
+                write_command(0x82);
+                write_command(0x0F);
+                for (j=0; j<11; j++)
+                {
+                    dataWrite(butStime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
             }
         }
-    }
 
-    if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
-        if(setT == 0){    //decreasing the hours
-            Shours--;
-            if (Shours == 0)                         sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);    //12 am
-            else if (Shours>12 && Shours<22)      sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);  //b/w 1 PM and 9 PM
-            else if (Shours==12)                     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins,Ssecs);          //noon 12 PM
-            else if(Shours>21 && Shours<24)       sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and 11 PM
-            else if (Shours < 10 && Shours >0)                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
-            else if(Shours >23){
-                Shours=0;
-                sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
-            }
-            else if(Shours<0){
-                Shours = 23;
-                sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
-            }
-            else                                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
-            write_command(0x82);
-            write_command(0x0F);
-            for (j=0; j<11; j++)
-            {
-                dataWrite(butStime[j]);    //prints time to LCD
-                Systick_us_delay(10);
-            }
-        }
-        if (setT==1){       //decreasing the minutes
-            Smins--;
-            if (Shours == 0){     //12 AM
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
+        if(SNOOZEbutton_pressed()){  // decreasing the hours or minutes
+            if(setT == 0){    //decreasing the hours
+                Shours--;
+                if (Shours == 0)                         sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);    //12 am
+                else if (Shours>12 && Shours<22)      sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);  //b/w 1 PM and 9 PM
+                else if (Shours==12)                     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins,Ssecs);          //noon 12 PM
+                else if(Shours>21 && Shours<24)       sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and 11 PM
+                else if (Shours < 10 && Shours >0)                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
+                else if(Shours >23){
+                    Shours=0;
+                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12,Smins, Ssecs);       //12 am
                 }
-            }
-            else if (Shours>12 && Shours<22){
-                if (Smins >0 && Smins <= 59 )     sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
-                }
-            }
-            else if (Shours==12){
-                if (Smins >0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, "%02d:%02d:%02d PM", Shours, Smins, Ssecs);    //12:00 goes back to zerow
-                }
-            }
-            else if(Shours>21 && Shours<24){
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and midnight
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);
-                }
-            }
-            else if (Shours < 10){
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);
-                }
-            }
-            else if(Shours > 23){
-                Shours=0;
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
-                }
-            }
-            else if(Shours < 0){
-                Shours =23;
-                if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
-                else if(Smins <= 0){
-                    Smins =59;
+                else if(Shours<0){
+                    Shours = 23;
                     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
                 }
-            }
-            else{
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
-                else if (Smins <= 0){
-                    Smins=59;
-                    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                else                                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                write_command(0x82);
+                write_command(0x0F);
+                for (j=0; j<11; j++)
+                {
+                    dataWrite(butStime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
                 }
             }
-            write_command(0x82);
-            write_command(0x0F);
-            for (j=0; j<11; j++)
-            {
-                dataWrite(butStime[j]);    //prints time to LCD
-                Systick_us_delay(10);
+            if (setT==1){       //decreasing the minutes
+                Smins--;
+                if (Shours == 0){     //12 AM
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
+                    }
+                }
+                else if (Shours>12 && Shours<22){
+                    if (Smins >0 && Smins <= 59 )     sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, " %01d:%02d:%02d PM", Shours-12,Smins, Ssecs);
+                    }
+                }
+                else if (Shours==12){
+                    if (Smins >0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours,Smins, Ssecs);          //noon 12 PM
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours, Smins, Ssecs);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Shours>21 && Shours<24){
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //b/w 10 PM and midnight
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);
+                    }
+                }
+                else if (Shours < 10){
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    }
+                }
+                else if(Shours > 23){
+                    Shours=0;
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 to 12:59 AM
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours+12, Smins, Ssecs);    //12:00 goes back to zerow
+                    }
+                }
+                else if(Shours < 0){
+                    Shours =23;
+                    if (Smins >=0 && Smins <= 59 )     sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
+                    else if(Smins <= 0){
+                        Smins =59;
+                        sprintf(butStime, "%02d:%02d:%02d PM", Shours-12,Smins,Ssecs);       //11 PM
+                    }
+                }
+                else{
+                    if (Smins >=0 && Smins <= 59 )    sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    else if (Smins <= 0){
+                        Smins=59;
+                        sprintf(butStime, "%02d:%02d:%02d AM", Shours,Smins,Ssecs);
+                    }
+                }
+                write_command(0x82);
+                write_command(0x0F);
+                for (j=0; j<11; j++)
+                {
+                    dataWrite(butStime[j]);    //prints time to LCD
+                    Systick_us_delay(10);
+                }
             }
         }
-    }
 
 
 }
@@ -842,16 +884,39 @@ void RTC_C_IRQHandler()
     if(RTC_C->PS1CTL & BIT0)
     {
         hours = RTC_C->TIM1 & 0x00FF;
+        if (hours > 23) RTC_C->TIM1 = 0<<8;
         mins = (RTC_C->TIM0 & 0xFF00) >> 8;
+        if(mins > 59) RTC_C->TIM0 = 0<<8;
         secs = RTC_C->TIM0 & 0x00FF;
-
+        static int alrm = 0;
         static int light = 0;
+        alrm++;
+        if (alrm%2 == 0)
+            al = 1;
         light++;
         if (light%3 == 0){
             b = 1;
         }
+
+        if (speed == 1)
+        {
+            if (mins>59) RTC_C->TIM1 = ((RTC_C->TIM1 & 0x00FF)+1);
+        if(secs != 59){                                 // If not  59 seconds, add 1 (otherwise 59+1 = 60 which doesn't work)
+            RTC_C->TIM0 = RTC_C->TIM0 + 1;
+        }
+        else {
+            RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;  // Add a minute if at 59 seconds.  This also resets seconds.
+            // TODO: What happens if minutes are at 59 minutes as well?
+            time_update = 1;                                     // Send flag to main program to notify a time update occurred.
+        }
+        RTC_C->PS1CTL &= ~BIT0;
+        }
+
+        else if (speed == 0)
+        {
         time_update = 1;
         RTC_C->PS1CTL &= ~BIT0;
+        }
     }
     if(RTC_C->CTL0 & BIT1)
     {
@@ -861,12 +926,12 @@ void RTC_C_IRQHandler()
 
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by whoever wrote the code in the Lab6 document
- * initializes,clears and homes cursor on LCD
- * Inputs: None
- * Outputs:None
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by whoever wrote the code in the Lab6 document
+* initializes,clears and homes cursor on LCD
+* Inputs: None
+* Outputs:None
+***************************************************** */
 void LCD_init()
 {
     write_command(3);   //reset sequence
@@ -891,24 +956,24 @@ void LCD_init()
     Systick_ms_delay(10);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * * sets rs to 0 and sends command to Byte
- * Inputs: NA
- * Outputs: rs
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* * sets rs to 0 and sends command to Byte
+* Inputs: NA
+* Outputs: rs
+***************************************************** */
 void write_command(uint8_t command)
 {
     P2->OUT &= ~(BIT3); //set rs to 0
     Byte(command);  //send command to Byte
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * sets rs to 1 and sends data to Byte
- * Inputs: NA
- * Outputs: RS on LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* sets rs to 1 and sends data to Byte
+* Inputs: NA
+* Outputs: RS on LCD
+***************************************************** */
 void dataWrite(uint8_t data)
 {
     P2->OUT |= (BIT3);  //set rs to 1
@@ -916,12 +981,12 @@ void dataWrite(uint8_t data)
     Byte(data); //send data to Byte
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * pulse enables for LCD
- * Inputs: NA
- * Outputs: E on LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* pulse enables for LCD
+* Inputs: NA
+* Outputs: E on LCD
+***************************************************** */
 void PulseEnablePin(void)
 {
     P3->OUT &=~(BIT0);  //turns enable low
@@ -932,12 +997,12 @@ void PulseEnablePin(void)
     Systick_us_delay(1000);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * shifts bits for printing on LCD
- * Inputs: NA
- * Ouputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* shifts bits for printing on LCD
+* Inputs: NA
+* Ouputs: NA
+***************************************************** */
 void Byte(uint8_t byte)
 {
     uint8_t nibble;
@@ -948,12 +1013,12 @@ void Byte(uint8_t byte)
     Systick_us_delay(1500);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * shifts and sends out bits for printing on LCD
- * Inputs: NA
- * Outputs: DB input pins to LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* shifts and sends out bits for printing on LCD
+* Inputs: NA
+* Outputs: DB input pins to LCD
+***************************************************** */
 void Nibble(uint8_t nibble)
 {
     P2->OUT &= ~(BIT4|BIT5|BIT6|BIT7); //clears P2 needed
@@ -961,12 +1026,12 @@ void Nibble(uint8_t nibble)
     PulseEnablePin();
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes pins for LCD and motor LEDs
- * Inputs: N/A
- * Outputs: E, DB, and rs on LCD, and LEDs for motor
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes pins for LCD and motor LEDs
+* Inputs: N/A
+* Outputs: E, DB, and rs on LCD, and LEDs for motor
+***************************************************** */
 void LCD_pin_init(void)
 {
     P2->SEL0 &=  ~(BIT4|BIT5|BIT6|BIT7|BIT3); // Port 2, 4(DB pins) and rs
@@ -983,12 +1048,12 @@ void LCD_pin_init(void)
     P1->OUT |= BIT6;
 }
 /********************************************************
- * Michaael James     Bryanna Flowers
- * Written by MJ and BF
- * initialize systick for microseconds
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michaael James     Bryanna Flowers
+* Written by MJ and BF
+* initialize systick for microseconds
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void Systick_us_delay(uint32_t microsecond)
 {
     SysTick->LOAD = (microsecond*3 - 1);    //delay times 3 the value
@@ -996,12 +1061,12 @@ void Systick_us_delay(uint32_t microsecond)
     while ((SysTick -> CTRL & 0x00010000) == 0);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * systick initialize
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* systick initialize
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void SysTick_Init(void)
 {
     SysTick -> CTRL = 0;
@@ -1010,12 +1075,12 @@ void SysTick_Init(void)
     SysTick -> CTRL = 0x00000005;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * systick millisecond setup
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* systick millisecond setup
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void Systick_ms_delay(uint16_t delay)
 {
     SysTick -> LOAD = ((delay*3000) - 1);
@@ -1088,12 +1153,12 @@ void setupSerial()
     NVIC_EnableIRQ(EUSCIA0_IRQn);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * initializing timers and PWM for both motors and LEDs
- * Inputs: N/A
- * Outputs: LED PWMs and both motor PWM
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* initializing timers and PWM for both motors and LEDs
+* Inputs: N/A
+* Outputs: LED PWMs and both motor PWM
+***************************************************** */
 void initializePWMports(){
 
     P6->SEL0 |= (BIT6|BIT7);    //PWM for blue and red
@@ -1117,25 +1182,25 @@ void initializePWMports(){
 
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * turns on and off the lights
- * Inputs: N/A
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* turns on and off the lights
+* Inputs: N/A
+* Outputs: N/A
+***************************************************** */
 void brighter()
 {
     TIMER_A2->CCR[3] = brightness;
     TIMER_A2->CCR[4] = brightness;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * initializing buttons for interrupts
- * Inputs: buttons for setting time and alarm, and snooze
- * and turning on and off the alarm
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* initializing buttons for interrupts
+* Inputs: buttons for setting time and alarm, and snooze
+* and turning on and off the alarm
+* Outputs: N/A
+***************************************************** */
 void butt_init(void)
 {
     P6->DIR &= ~(BIT0); //input time
@@ -1146,7 +1211,7 @@ void butt_init(void)
     P6->IFG = 0;    //clear flag
 
     P5->DIR &= ~(BIT7); //input alarm
-    P5->REN = (BIT7);
+   P5->REN = (BIT7);
     P5->OUT |= (BIT7);
     P5->IE = (BIT7);    //enable interrupt
     P5->IES |= (BIT7);
@@ -1160,12 +1225,12 @@ void butt_init(void)
     P3->IFG = 0;    //clear flag
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for alarm button
- * Inputs: button for setting the alarm P5.7
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for alarm button
+* Inputs: button for setting the alarm P5.7
+* Outputs: N/A
+***************************************************** */
 int ALARMbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1178,12 +1243,12 @@ int ALARMbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for time button
- * Inputs: debounce for button for setting the time P6.0
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for time button
+* Inputs: debounce for button for setting the time P6.0
+* Outputs: N/A
+***************************************************** */
 int TIMEbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1196,14 +1261,14 @@ int TIMEbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for the ON/OFF/UP button
- * Inputs: debounce for button for turning the alarm on
- * or off and increasing the hours and minutes when
- * setting alarm and time P3.2
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for the ON/OFF/UP button
+* Inputs: debounce for button for turning the alarm on
+* or off and increasing the hours and minutes when
+* setting alarm and time P3.2
+* Outputs: N/A
+***************************************************** */
 int ONOFFbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1216,14 +1281,14 @@ int ONOFFbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for Snooze/Down button
- * Inputs: button for snoozing the alarm and
- * decreasing the hours and minutes when setting alarm
- * and time P3.3
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for Snooze/Down button
+* Inputs: button for snoozing the alarm and
+* decreasing the hours and minutes when setting alarm
+* and time P3.3
+* Outputs: N/A
+***************************************************** */
 int SNOOZEbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1236,12 +1301,12 @@ int SNOOZEbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * interrupt for time button
- * Inputs: button for setting time
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* interrupt for time button
+* Inputs: button for setting time
+* Outputs: N/A
+***************************************************** */
 void PORT6_IRQHandler(void){
     P6->IFG = 0x00; //clears intrrupt flag
     if(!(P6->IN & BIT0)){   // if interrupt flag triggered
@@ -1279,8 +1344,38 @@ void PORT3_IRQHandler(void){
         SD = 1;
     }
 }
-//void Sound(void)
-//{
-//
-//}
+void SetupTimerAlarm()
+{
+    P7->SEL0 |= BIT6;    // P7.6 to PWM Control for speaker
+    P7->SEL1 &= ~BIT6;
+    P7->DIR |= BIT6;
+
+        TIMER_A1->CCR[0]=3000000/450;
+        TIMER_A1->CCR[2]=0;
+        TIMER_A1->CCTL[2] = 0b11100000;   //reset set
+        TIMER_A1->CTL = 0x0214;  //count up clear register
+}
+
+void PORT1_IRQHandler(void)
+{
+    if(P1->IFG & BIT1) {                                //If P1.1 had an interrupt
+        RTC_C->PS1CTL = 0b11010;  //1/64 second interrupt
+       speed = 0;
+    }
+    if(P1->IFG & BIT4) {                                //If P1.4 had an interrupt
+        RTC_C->PS1CTL = 0b00010;  //1/64 second interrupt
+       speed = 1;
+    }
+    P1->IFG = 0;                                        //Clear all flags
+}
+void P1_Init() {
+    P1->SEL0 &= ~(BIT1|BIT4);
+    P1->SEL1 &= ~(BIT1|BIT4);
+    P1->DIR  &= ~(BIT1|BIT4);
+    P1->REN  |=  (BIT1|BIT4);
+    P1->OUT  |=  (BIT1|BIT4);
+    P1->IE   |=  (BIT1|BIT4);
+    P1->IFG = 0;
+    NVIC_EnableIRQ(PORT1_IRQn);
+}
 
