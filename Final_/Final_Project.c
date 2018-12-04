@@ -11,6 +11,8 @@ enum states{
     SNOOZE,
     TURN,
 };
+//is this updating????
+//TESTING GITHUB
 
 void SerialRTC_Init();
 void GeneralRTC_Init();
