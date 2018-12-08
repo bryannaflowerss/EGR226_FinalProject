@@ -1,5 +1,23 @@
 #include "msp.h"
 #include "stdio.h"
+/********************************************************
+ * Michael James     Bryanna Flowers
+ * EGR226             Section 902
+ * This code runs a series of LEDs, LCD display, speaker
+ * , and tactical push buttons. All of which play one
+ * main role of running a digital alarm clock. The clock
+ * runs off a build in code in the MSP called real
+ * time clock. The code has one alarm that can be set
+ * through buttons or through a serial input. The main
+ * functions of the code run the time, set time and alarms
+ * set off an alarm with a speaker and lights, and adjust
+ * brightness and sound.
+ ***************************************************** */
+
+/*
+ * Credit to Zuidema RTC base code and few other parts of code
+ * Credit to writer of lab for LCD_init
+ */
 
 enum states{
     CLOCK,
@@ -229,6 +247,8 @@ void main(void){
         }
 
         switch (state){
+
+
         case CLOCK:
             if(time_update){
                 time_update = 0;
@@ -249,7 +269,7 @@ void main(void){
                 int h = hours;
                 int Am = Amins;
                 int m = mins;
-
+                        // all different cases that the lights should be triggered incase alarm is on and time if 5 minutes out from alarm
                 if ( (Ah == h) && ( (Am - m) <= 5) && (Am - m) >= 0 && (status == 1 || status == 2))
                 {
                     car = 1;
@@ -263,24 +283,24 @@ void main(void){
                 }
                 else car = 0;
 
-                if (b == 1 && car == 1)
+                if (b == 1 && car == 1) //in slow mode and alarm is near
                 {
 
-                    brightness += 100;
-                    brighter();
-                    b = 0;
+                    brightness += 100;  ///increase brightness by 1%
+                    brighter(); //brightness function
+                    b = 0;  // resets flag
                 }
-                else if (c == 1  && car == 1)
+                else if (c == 1  && car == 1)   //in fast mode and alarm is near
                 {
-                    brightness += 600;
+                    brightness += 600;  //increase brightness 20%
                     brighter();
                     c = 0;
                 }
 
-                else if (status == 0)
+                else if (status == 0)   //if not turn lights off
                 {
-                    brightness = 0;
-                    brighter();
+                    brightness = 0; //turn off lights
+                    brighter(); //call brightness function
                 }
             }
             if(alarm_update){
@@ -299,7 +319,7 @@ void main(void){
                 }
                 alarm_update = 0;
             }
-            if(status == 1)
+            if(status == 1) //on state print
             {
                 dataWrite(' ');
                 Systick_us_delay(10);
@@ -315,7 +335,7 @@ void main(void){
                 dataWrite(' ');
                 Systick_us_delay(10);
             }
-            else if(status == 0)
+            else if(status == 0)    //Off state print
             {
                 write_command(0xC5)  ;
                 dataWrite(' ');
@@ -331,7 +351,7 @@ void main(void){
                 dataWrite(' ');
                 Systick_us_delay(10);
             }
-            else if(status == 2)
+            else if(status == 2)    //snooze state print
             {
                 write_command(0xC5)  ;
                 dataWrite('S');
@@ -361,7 +381,7 @@ void main(void){
             int Am = Amins;
             int m = mins;
             int s = secs;
-            if (OOU == 1 && status == 0)
+            if (OOU == 1 && status == 0)    //turn alarm on if off
             {
                 OOU = 0;
                 if(ONOFFbutton_pressed())
@@ -370,7 +390,7 @@ void main(void){
                     sound = 0;  //not sounding
                 }
             }
-            else if (OOU == 1 && status == 1)
+            else if (OOU == 1 && status == 1)   //turn alarm off if on
             {
                 OOU = 0;
                 if(ONOFFbutton_pressed())
@@ -381,7 +401,7 @@ void main(void){
                     brighter(); //function increases brightness every three seconds
                 }
             }
-            else if (OOU == 1 && status == 2)
+            else if (OOU == 1 && status == 2)   //turn alarm sound off
             {
                 OOU = 0;
                 if(ONOFFbutton_pressed())       //debounces the button
@@ -392,7 +412,7 @@ void main(void){
                     brighter(); //increases LED brightness 1% every three seconds
                 }
             }
-            else if (SD == 1 && sound == 1)
+            else if (SD == 1 && sound == 1) //turn alarm off to snooze
             {
                 SD = 0;
                 if(SNOOZEbutton_pressed())
@@ -421,7 +441,7 @@ void main(void){
                         Ssecs = secs;
                         RTC_Init();         //sets the alarm time to the increased time
                     }
-                    else if ( m > 50 && h == 23)
+                    else if ( m > 50 && h == 23) //if minutes are greater than 50 and hours == 11PM
                     {
                         Amins = mins - 50;
                         Ahours = 0;
@@ -479,7 +499,7 @@ void main(void){
 }
 
 void setalarm(){
-    char butAtime[11];
+   char butAtime[11];
     //when setA is 0 the hours are being adjusted
     //the set time button is pressed again setA = 1 and the minutes are being adjusted
 
@@ -532,7 +552,7 @@ void setalarm(){
                 else if (Amins == 60){
                     Amins=0;
                     sprintf(butAtime, "%02d:%02d PM", Ahours, Amins);    //12:00 goes back to zero
-                }
+               }
             }
             else if (Ahours>12 && Ahours<22){
                 if (Amins > 0 && Amins <= 59 )     sprintf(butAtime, " %01d:%02d PM", Ahours-12,Amins);      //1-9PM
@@ -686,13 +706,13 @@ void setalarm(){
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Set the time to what is input by the buttons from
- * the user.
- * Inputs: P3.2 and P3.3 buttons
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Set the time to what is input by the buttons from
+* the user.
+* Inputs: P3.2 and P3.3 buttons
+* Outputs: N/A
+******************************************************/
 void settime(){
     char butStime[11];
     //when setT is 0 the hours are being adjusted
@@ -859,7 +879,7 @@ void settime(){
                 }
             }
             else if (Shours < 10){
-                if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
+               if (Smins >=0 && Smins <= 59 )    sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);         //b/w 1 AM and 9 AM
                 else if (Smins <= 0){
                     Smins=59;
                     sprintf(butStime, " %01d:%02d:%02d AM", Shours,Smins,Ssecs);
@@ -899,14 +919,14 @@ void settime(){
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes the real time clock to the hours and minutes
- * set by the buttons or the serial monitor and enables
- * an interrupt.
- * Inputs: N/A
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes the real time clock to the hours and minutes
+* set by the buttons or the serial monitor and enables
+* an interrupt.
+* Inputs: N/A
+* Outputs: N/A
+******************************************************/
 void RTC_Init(){
     //Initialize time to input from serial or buttons
     RTC_C->CTL0 = (0xA500);
@@ -950,7 +970,7 @@ void RTC_C_IRQHandler()
             }
             else {
                 RTC_C->TIM0 = (((RTC_C->TIM0 & 0xFF00) >> 8)+1)<<8;  // Add a minute if at 59 seconds.  This also resets seconds.
-                // TODO: What happens if minutes are at 59 minutes as well?
+
                 alrm++;
                 if (alrm%2 == 0)
                     al = 1;
@@ -981,12 +1001,12 @@ void RTC_C_IRQHandler()
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by whoever wrote the code in the Lab6 document
- * initializes,clears and homes cursor on LCD
- * Inputs: None
- * Outputs:None
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by whoever wrote the code in the Lab6 document
+* initializes,clears and homes cursor on LCD
+* Inputs: None
+* Outputs:None
+***************************************************** */
 void LCD_init()
 {
     write_command(3);   //reset sequence
@@ -1011,36 +1031,36 @@ void LCD_init()
     Systick_ms_delay(10);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * * sets rs to 0 and sends command to Byte
- * Inputs: NA
- * Outputs: rs
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* * sets rs to 0 and sends command to Byte
+* Inputs: NA
+* Outputs: rs
+***************************************************** */
 void write_command(uint8_t command)
 {
     P2->OUT &= ~(BIT3); //set rs to 0
     Byte(command);  //send command to Byte
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * sets rs to 1 and sends data to Byte
- * Inputs: NA
- * Outputs: RS on LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* sets rs to 1 and sends data to Byte
+* Inputs: NA
+* Outputs: RS on LCD
+***************************************************** */
 void dataWrite(uint8_t data)
 {
     P2->OUT |= (BIT3);  //set rs to 1
     Byte(data); //send data to Byte
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * pulse enables for LCD
- * Inputs: NA
- * Outputs: E on LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* pulse enables for LCD
+* Inputs: NA
+* Outputs: E on LCD
+***************************************************** */
 void PulseEnablePin(void)
 {
     P3->OUT &=~(BIT0);  //turns enable low
@@ -1051,12 +1071,12 @@ void PulseEnablePin(void)
     Systick_us_delay(1000);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * shifts bits for printing on LCD
- * Inputs: NA
- * Ouputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* shifts bits for printing on LCD
+* Inputs: NA
+* Ouputs: NA
+***************************************************** */
 void Byte(uint8_t byte)
 {
     uint8_t nibble;
@@ -1067,12 +1087,12 @@ void Byte(uint8_t byte)
     Systick_us_delay(1500);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * shifts and sends out bits for printing on LCD
- * Inputs: NA
- * Outputs: DB input pins to LCD
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* shifts and sends out bits for printing on LCD
+* Inputs: NA
+* Outputs: DB input pins to LCD
+***************************************************** */
 void Nibble(uint8_t nibble)
 {
     P2->OUT &= ~(BIT4|BIT5|BIT6|BIT7); //clears P2 needed
@@ -1080,12 +1100,12 @@ void Nibble(uint8_t nibble)
     PulseEnablePin();
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes pins for LCD and motor LEDs
- * Inputs: N/A
- * Outputs: E, DB, and rs on LCD, and LEDs for motor
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes pins for LCD and motor LEDs
+* Inputs: N/A
+* Outputs: E, DB, and rs on LCD, and LEDs for motor
+***************************************************** */
 void LCD_pin_init(void)
 {
     P2->SEL0 &=  ~(BIT4|BIT5|BIT6|BIT7|BIT3); // Port 2, 4(DB pins) and rs
@@ -1102,12 +1122,12 @@ void LCD_pin_init(void)
     P1->OUT |= BIT6;
 }
 /********************************************************
- * Michaael James     Bryanna Flowers
- * Written by MJ and BF
- * initialize systick for microseconds
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michaael James     Bryanna Flowers
+* Written by MJ and BF
+* initialize systick for microseconds
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void Systick_us_delay(uint32_t microsecond)
 {
     SysTick->LOAD = (microsecond*3 - 1);    //delay times 3 the value
@@ -1115,12 +1135,12 @@ void Systick_us_delay(uint32_t microsecond)
     while ((SysTick -> CTRL & 0x00010000) == 0);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * systick initialize
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* systick initialize
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void SysTick_Init(void)
 {
     SysTick -> CTRL = 0;
@@ -1129,12 +1149,12 @@ void SysTick_Init(void)
     SysTick -> CTRL = 0x00000005;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * systick millisecond setup
- * Inputs: NA
- * Outputs: NA
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* systick millisecond setup
+* Inputs: NA
+* Outputs: NA
+***************************************************** */
 void Systick_ms_delay(uint16_t delay)
 {
     SysTick -> LOAD = ((delay*3000) - 1);
@@ -1143,12 +1163,12 @@ void Systick_ms_delay(uint16_t delay)
 }
 
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Enables the interrupt for the serial communication port
- * Inputs: N/A
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Enables the interrupt for the serial communication port
+* Inputs: N/A
+* Outputs: N/A
+******************************************************/
 void EUSCIA0_IRQHandler(void)
 {
     if (EUSCI_A0->IFG & BIT0)  // Interrupt on the receive line
@@ -1175,13 +1195,13 @@ void writeOutput(char *string)
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Reads the input from the serial monitor once the end
- * character has been entered.
- * Inputs: char string
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Reads the input from the serial monitor once the end
+* character has been entered.
+* Inputs: char string
+* Outputs: N/A
+******************************************************/
 void readInput(char *string)
 {
     int i = 0;  // Location in the char array "string" that is being written to
@@ -1201,14 +1221,14 @@ void readInput(char *string)
     string[i-1] = '\0'; // Replace the \n with a \0 to end the string when returning this function
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes the serial monitor with the correct baud rate,
- * number of bits, and parity or not. As well as enables
- * the serial monitor interrupt.
- * Inputs: N/A
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes the serial monitor with the correct baud rate,
+* number of bits, and parity or not. As well as enables
+* the serial monitor interrupt.
+* Inputs: N/A
+* Outputs: N/A
+******************************************************/
 void setupSerial()
 {
     // Baud Rate Configuration
@@ -1230,12 +1250,12 @@ void setupSerial()
     NVIC_EnableIRQ(EUSCIA0_IRQn);
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * initializing timers and PWM for both motors and LEDs
- * Inputs: N/A
- * Outputs: LED PWMs and both motor PWM
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* initializing timers and PWM for both motors and LEDs
+* Inputs: N/A
+* Outputs: LED PWMs and both motor PWM
+***************************************************** */
 void initializePWMports(){
 
     P6->SEL0 |= (BIT6|BIT7);    //PWM for blue and red
@@ -1269,25 +1289,25 @@ void initializePWMports(){
 
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * turns on and off the lights
- * Inputs: N/A
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* turns on and off the lights
+* Inputs: N/A
+* Outputs: N/A
+***************************************************** */
 void brighter()
 {
     TIMER_A2->CCR[3] = brightness;
     TIMER_A2->CCR[4] = brightness;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * initializing buttons for interrupts
- * Inputs: buttons for setting time and alarm, and snooze
- * and turning on and off the alarm
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* initializing buttons for interrupts
+* Inputs: buttons for setting time and alarm, and snooze
+* and turning on and off the alarm
+* Outputs: N/A
+***************************************************** */
 void butt_init(void)
 {
     P6->DIR &= ~(BIT0); //input time
@@ -1312,12 +1332,12 @@ void butt_init(void)
     P3->IFG = 0;    //clear flag
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for alarm button
- * Inputs: button for setting the alarm P5.7
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for alarm button
+* Inputs: button for setting the alarm P5.7
+* Outputs: N/A
+***************************************************** */
 int ALARMbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1330,12 +1350,12 @@ int ALARMbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for time button
- * Inputs: debounce for button for setting the time P6.0
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for time button
+* Inputs: debounce for button for setting the time P6.0
+* Outputs: N/A
+***************************************************** */
 int TIMEbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1348,14 +1368,14 @@ int TIMEbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for the ON/OFF/UP button
- * Inputs: debounce for button for turning the alarm on
- * or off and increasing the hours and minutes when
- * setting alarm and time P3.2
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for the ON/OFF/UP button
+* Inputs: debounce for button for turning the alarm on
+* or off and increasing the hours and minutes when
+* setting alarm and time P3.2
+* Outputs: N/A
+***************************************************** */
 int ONOFFbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1368,14 +1388,14 @@ int ONOFFbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * debounce for Snooze/Down button
- * Inputs: button for snoozing the alarm and
- * decreasing the hours and minutes when setting alarm
- * and time P3.3
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* debounce for Snooze/Down button
+* Inputs: button for snoozing the alarm and
+* decreasing the hours and minutes when setting alarm
+* and time P3.3
+* Outputs: N/A
+***************************************************** */
 int SNOOZEbutton_pressed(void)
 {
     int buttonDebounced = 0;
@@ -1388,12 +1408,12 @@ int SNOOZEbutton_pressed(void)
     return buttonDebounced;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * interrupt for time button
- * Inputs: button for setting time
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* interrupt for time button
+* Inputs: button for setting time
+* Outputs: N/A
+***************************************************** */
 void PORT6_IRQHandler(void){
     P6->IFG = 0x00; //clears intrrupt flag
     if(!(P6->IN & BIT0)){   // if interrupt flag triggered
@@ -1401,12 +1421,12 @@ void PORT6_IRQHandler(void){
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * interrupt for alarm button
- * Inputs: button for setting alarm
- * Outputs: N/A
- *******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* interrupt for alarm button
+* Inputs: button for setting alarm
+* Outputs: N/A
+*******************************************************/
 void PORT5_IRQHandler(void){
     P5->IFG = 0x00; //clears interrupt flag
     if(!(P5->IN & BIT7)){   //if interrupt flag triggered
@@ -1414,13 +1434,13 @@ void PORT5_IRQHandler(void){
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * interrupt for ON/OFF/Up and Snooze/Down button
- * Inputs: buttons for turning on and off the alarm as well
- * as snoozing the alarm 3.2 (on/off/up) 3.3 (snooze/down)
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* interrupt for ON/OFF/Up and Snooze/Down button
+* Inputs: buttons for turning on and off the alarm as well
+* as snoozing the alarm 3.2 (on/off/up) 3.3 (snooze/down)
+* Outputs: N/A
+***************************************************** */
 void PORT3_IRQHandler(void){
     P3->IFG = 0x00; //clears intrrupt flag
     if(!(P3->IN & BIT2)){   // if interrupt flag triggered
@@ -1431,13 +1451,13 @@ void PORT3_IRQHandler(void){
     }
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes P7.6 as TimerA to allow for the speaker
- * volume to be adjusted
- * Inputs: N/A
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes P7.6 as TimerA to allow for the speaker
+* volume to be adjusted
+* Inputs: N/A
+* Outputs: N/A
+******************************************************/
 void SetupTimerAlarm()
 {
     P7->SEL0 |= BIT6;    // P7.6 to PWM Control for speaker
@@ -1450,13 +1470,13 @@ void SetupTimerAlarm()
     TIMER_A1->CTL = 0x0214;  //count up clear register
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * The function that is called when there is an interrupt
- * on P1.1 or P1.4 buttons
- * Inputs: N/A
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* The function that is called when there is an interrupt
+* on P1.1 or P1.4 buttons
+* Inputs: N/A
+* Outputs: N/A
+******************************************************/
 void PORT1_IRQHandler(void)
 {
     if(P1->IFG & BIT1) {                                //If P1.1 had an interrupt
@@ -1470,12 +1490,12 @@ void PORT1_IRQHandler(void)
     P1->IFG = 0;                                        //Clear all flags
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes the internal buttons P1.1 and P1.4
- * Inputs: P1.1 and P1.4
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes the internal buttons P1.1 and P1.4
+* Inputs: P1.1 and P1.4
+* Outputs: N/A
+******************************************************/
 void P1_Init() {
     P1->SEL0 &= ~(BIT1|BIT4);       //initialized as inputs
     P1->SEL1 &= ~(BIT1|BIT4);
@@ -1487,12 +1507,12 @@ void P1_Init() {
     NVIC_EnableIRQ(PORT1_IRQn);     //enables the interrpt for these buttons
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes the Analog to Digital Converter on P5.5
- * Inputs: P5.5
- * Outputs: N/A
- ******************************************************/
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes the Analog to Digital Converter on P5.5
+* Inputs: P5.5
+* Outputs: N/A
+******************************************************/
 void PortADC_init(void)
 {
     P5->SEL0 |= BIT5;   //sets pin 5.5 as A0 input
@@ -1501,12 +1521,12 @@ void PortADC_init(void)
     P5->SEL1 |= BIT0;
 }
 /********************************************************
- * Michael James     Bryanna Flowers
- * Written by MJ and BF
- * Initializes the Analog to Digital Converter, 14 bits
- * Inputs: N/A
- * Outputs: N/A
- ***************************************************** */
+* Michael James     Bryanna Flowers
+* Written by MJ and BF
+* Initializes the Analog to Digital Converter, 14 bits
+* Inputs: N/A
+* Outputs: N/A
+***************************************************** */
 void ADC14_init(void)
 {
     ADC14->CTL0 &= ~ADC14_CTL0_ENC;    //turns off ADC converter while initializing
@@ -1515,7 +1535,7 @@ void ADC14_init(void)
     ADC14->CTL1 |= 0x00000000;         //convert for mem0 register
     ADC14->MCTL[0]=0x00000000;         //mem[0] to ADC14INCHx = 0
 
-    ADC14->MCTL[5]= 5;         //mem[0] to ADC14INCHx = 0
+   ADC14->MCTL[5]= 5;         //mem[0] to ADC14INCHx = 0
     ADC14->CTL0 |= ADC14_CTL0_ENC;     //enables ADC14ENC and starts ADC after configuration
 }
 
